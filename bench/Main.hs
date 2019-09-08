@@ -36,8 +36,12 @@ main = defaultMain
       ]
     ]
   , bgroup "scientific"
-    [ bench "ten-small"
-      (whnf (\b -> Atto.parseOnly (aesonDecodeN 10 []) (fromPinned b)) tenSmall)
+    [ bgroup "parser"
+      [ bench "ten-small" $ whnf
+        (\b -> Atto.parseOnly
+          (aesonDecodeN 10 []) (fromPinned b)
+        ) tenSmall
+      ]
     , bgroup "conversion"
       [ bench "twenty-word16"
         (whnf (\b -> convertSlowArray16 b) twentySlowSci)
