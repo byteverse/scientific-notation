@@ -14,10 +14,11 @@ import qualified GHC.Exts as Exts
 import qualified Data.Bytes as Bytes
 import qualified Data.Bytes.Parser as P
 import qualified Data.Primitive as PM
-import qualified "scientific-notation" Data.Scientific as SCI
 import qualified Data.Attoparsec.ByteString.Char8 as Atto
 import qualified Data.Aeson.Parser as Aeson
+
 import qualified "scientific" Data.Scientific as SlowSci
+import qualified "scientific-notation" Data.Number.Scientific as SCI
 
 main :: IO ()
 main = defaultMain

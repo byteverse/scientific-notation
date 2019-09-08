@@ -9,14 +9,14 @@ import Data.Bool (bool)
 import Data.Bytes.Types (Bytes(Bytes))
 import Data.Char (ord)
 import Data.Primitive (ByteArray)
-import Data.Scientific (large,small,toWord8)
+import Data.Number.Scientific (large,small,toWord8)
 import Data.Word (Word8)
 import Test.Tasty (defaultMain,testGroup,TestTree)
 import Test.Tasty.HUnit ((@=?),assertFailure)
 import Test.Tasty.QuickCheck (testProperty,(===))
 import Data.Fixed (Fixed,E12)
 
-import qualified Data.Scientific as SCI
+import qualified Data.Number.Scientific as SCI
 import qualified Data.Bytes.Parser as P
 import qualified Data.Primitive as PM
 import qualified GHC.Exts as Exts

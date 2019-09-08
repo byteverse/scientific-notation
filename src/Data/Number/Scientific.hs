@@ -5,7 +5,7 @@
 {-# language MagicHash #-}
 {-# language UnboxedTuples #-}
 
-module Data.Scientific
+module Data.Number.Scientific
   ( Scientific
   , Scientific#
     -- * Produce
