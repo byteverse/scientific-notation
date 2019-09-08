@@ -4,7 +4,7 @@
 {-# language OverloadedStrings #-}
 {-# language NumDecimals #-}
 
-import Control.Monad (when)
+import Control.Monad (when,replicateM)
 import Data.Bool (bool)
 import Data.Bytes.Types (Bytes(Bytes))
 import Data.Char (ord)
@@ -16,6 +16,7 @@ import Test.Tasty.HUnit ((@=?),assertFailure)
 import Test.Tasty.QuickCheck (testProperty,(===))
 import Data.Fixed (Fixed,E12)
 
+import qualified Data.Bits as Bits
 import qualified Data.Number.Scientific as SCI
 import qualified Data.Bytes.Parser as P
 import qualified Data.Primitive as PM
@@ -79,6 +80,13 @@ tests = testGroup "Tests"
           ===
           P.parseBytes (SCI.parserSignedUtf8Bytes ())
             (bytes (show i))
+      , testProperty "large-integer" $ \(LargeInteger i) (LargeInteger j) ->
+          QC.counterexample (show (large i j))
+          $
+          P.Success (large i j) 0
+          ===
+          P.parseBytes (SCI.parserSignedUtf8Bytes ())
+            (bytes (show (large i j)))
       ]
     ]
   -- , testGroup "Word16"
@@ -98,4 +106,26 @@ bytes s = let b = pack ('x' : s) in Bytes b 1 (PM.sizeofByteArray b - 1)
 
 pack :: String -> ByteArray
 pack = Exts.fromList . map (fromIntegral @Int @Word8 . ord)
+
+-- The Arbitrary instance for Integer that comes with
+-- QuickCheck only generates small numbers.
+newtype LargeInteger = LargeInteger Integer
+  deriving (Eq,Show)
+
+instance QC.Arbitrary LargeInteger where
+  arbitrary = QC.sized $ \sz -> do
+      n <- QC.choose (1, sz)
+      sign <- QC.arbitrary
+      r <- (if sign then negate else id) . foldr f 0
+        <$> replicateM n QC.arbitrary
+      pure (LargeInteger r)
+    where
+      f :: Word8 -> Integer -> Integer
+      f w acc = (acc `Bits.shiftL` 8) + fromIntegral w
+  shrink (LargeInteger x)
+    | x > 3 =
+        [ LargeInteger (div x 2)
+        , LargeInteger (div x 3)
+        ]
+    | otherwise = []
 

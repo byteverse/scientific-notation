@@ -300,7 +300,7 @@ parserUnsignedUtf8Bytes# ::
 parserUnsignedUtf8Bytes# e =
   mapIntPairToScientific parseSmall#
   `orElseScientific`
-  unboxScientific (P.fail e)
+  upcastLargeScientific (parseLarge e)
 
 -- Negates the result after parsing the bytes.
 parserNegatedUnsignedUtf8Bytes# ::
@@ -309,7 +309,7 @@ parserNegatedUnsignedUtf8Bytes# ::
 parserNegatedUnsignedUtf8Bytes# e =
   mapNegateIntPairToScientific parseSmall#
   `orElseScientific`
-  unboxScientific (P.fail e)
+  upcastNegatedLargeScientific (parseLarge e)
 
 -- parserTrailingUtf8Bytes ::
 --      e -- ^ Error message
@@ -326,6 +326,24 @@ parserNegatedUnsignedUtf8Bytes# e =
 --   `orElseScientific`
 --   unboxScientific (P.fail e)
 
+parseLarge :: e -> Parser e s LargeScientific
+parseLarge e = do
+  coeff <- P.decPositiveInteger e
+  P.isEndOfInput >>= \case
+    True -> pure $! LargeScientific coeff 0
+    False -> P.anyUnsafeIso8859_1# `P.bindChar` \c -> case c of
+      '.'# -> do
+        !start <- P.cursor
+        afterDot <- P.decPositiveInteger e
+        !end <- P.cursor
+        let !logDenom = end - start
+            !coeffFinal = (integerTenExp coeff logDenom) + afterDot
+        P.isEndOfInput >>= \case
+          True -> pure $! LargeScientific coeffFinal $! fromIntegral $! Prelude.negate logDenom
+          False -> P.anyUnsafeIso8859_1# `P.bindChar` \x ->
+            attemptLargeExp e x coeffFinal (unI (Prelude.negate logDenom))
+      _ -> attemptLargeExp e c coeff 0#
+
 -- handles unsigned small numbers
 parseSmall# :: Parser () s (# Int#, Int# #)
 {-# noinline parseSmall# #-}
@@ -333,9 +351,7 @@ parseSmall# =
   P.decUnsignedInt# () `P.bindIntToIntPair` \coeff# ->
   P.isEndOfInput `P.bindToIntPair` \case
     True -> P.pureIntPair (# coeff#, 0# #)
-    -- Hmmm... anyAscii cannot actually fail. There must be
-    -- a better way.
-    False -> P.anyAscii# () `P.bindCharToIntPair` \c -> case c of
+    False -> P.anyUnsafeIso8859_1# `P.bindCharToIntPair` \c -> case c of
       '.'# ->
         P.cursor `P.bindToIntPair` \start ->
         P.decUnsignedInt# () `P.bindIntToIntPair` \afterDot# ->
@@ -349,11 +365,7 @@ parseSmall# =
                  in case overflowed of
                   0# -> P.isEndOfInput `P.bindToIntPair` \case
                     True -> P.pureIntPair (# coeffFinal, unI (Prelude.negate logDenom) #)
-                    -- Again, there must be a better way.
-                    -- Also, anyAscii is not technically correct. If a
-                    -- non-ASCII codepoint follows the number, we do
-                    -- not want to fail.
-                    False -> P.anyAscii# () `P.bindCharToIntPair` \x ->
+                    False -> P.anyUnsafeIso8859_1# `P.bindCharToIntPair` \x ->
                       (attemptSmallExp x coeffFinal (unI (Prelude.negate logDenom)))
                   _ -> P.failIntPair ()
               _ ->
@@ -366,8 +378,30 @@ parseSmall# =
          in goCoeff (I# coeff# ) logDenom
       _ -> attemptSmallExp c coeff# 0#
 
--- The delta passed to this is only ever a non-positive integer.
--- It is also between -21 and 0. (Or maybe -22 or -20, not sure).
+
+-- The delta passed to this is only ever a negative integer.
+attemptLargeExp ::
+     e
+  -> Exts.Char#
+  -> Integer
+  -> Int#
+  -> Parser e s LargeScientific
+{-# noinline attemptLargeExp #-}
+attemptLargeExp e !c# signedCoeff !deltaExp# = case c# of
+  'e'# -> do
+    exponent <- P.decSignedInteger e
+    let !exponent' = exponent + fromIntegral (I# deltaExp# )
+    pure (LargeScientific signedCoeff exponent')
+  'E'# -> do
+    exponent <- P.decSignedInteger e
+    let !exponent' = exponent + fromIntegral (I# deltaExp# )
+    pure (LargeScientific signedCoeff exponent')
+  _ -> do
+    P.unconsume 1
+    pure (LargeScientific signedCoeff 0)
+
+-- The delta passed to this is only ever a negative integer.
+-- It is also between -21 and -1. (Or maybe -22 or -20, not sure).
 attemptSmallExp :: Exts.Char# -> Int# -> Int# -> Parser () s (# Int#, Int# #)
 {-# noinline attemptSmallExp #-}
 attemptSmallExp !c# !signedCoeff# !deltaExp# = P.unboxIntPair $ case c# of
@@ -419,6 +453,22 @@ orElseScientific (Parser f) (Parser g) = Parser
       (# | r #) -> (# s1, (# | r #) #)
   )
 
+-- Precondition: argument is non-negative
+-- If the argument is r and the exponent is e, the result
+-- is described as: r * 10^e
+integerTenExp :: Integer -> Int -> Integer
+integerTenExp !r !e = case e of
+  0 -> r
+  1 -> r * 10
+  2 -> r * 100
+  3 -> r * 1000
+  4 -> r * 10000
+  5 -> r * 100000
+  6 -> r * 1000000
+  7 -> r * 10000000
+  8 -> r * 100000000
+  _ -> integerTenExp (r * 1000000000) (e - 9)
+
 -- This only works if the number is a power of ten.
 -- It is only intended to be used by fromFixed.
 -- Precondition: the Integer is not zero.
@@ -426,6 +476,26 @@ logBase10 :: Int -> Integer -> Int
 logBase10 !acc i = if i == 1
   then acc
   else logBase10 (acc + 1) (div i 10)
+
+upcastLargeScientific ::
+     Parser e s LargeScientific
+  -> Parser e s Scientific#
+upcastLargeScientific (Parser g) = Parser
+  (\x s0 -> case g x s0 of
+    (# s1, r #) -> case r of
+      (# e | #) -> (# s1, (# e | #) #)
+      (# | (# a, b, c #) #) -> (# s1, (# | (# (# 0#, unI minBound, a #), b, c #) #) #)
+  )
+
+upcastNegatedLargeScientific ::
+     Parser e s LargeScientific
+  -> Parser e s Scientific#
+upcastNegatedLargeScientific (Parser g) = Parser
+  (\x s0 -> case g x s0 of
+    (# s1, r #) -> case r of
+      (# e | #) -> (# s1, (# e | #) #)
+      (# | (# LargeScientific x y, b, c #) #) -> (# s1, (# | (# (# 0#, unI minBound, LargeScientific (Prelude.negate x) y #), b, c #) #) #)
+  )
 
 mapIntPairToScientific ::
      Parser e s (# Int#, Int# #)
