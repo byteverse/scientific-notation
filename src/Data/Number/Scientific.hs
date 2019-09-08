@@ -14,6 +14,7 @@ module Data.Number.Scientific
   , fromFixed
     -- * Consume
   , toWord8
+  , toWord16
     -- * Decode
   , parserSignedUtf8Bytes
   , parserSignedUtf8Bytes#
@@ -24,7 +25,7 @@ module Data.Number.Scientific
 import Prelude hiding (negate)
 
 import GHC.Exts (Int#,Word#,Int(I#),(+#),(*#))
-import GHC.Word (Word(W#),Word8(W8#))
+import GHC.Word (Word(W#),Word8(W8#),Word16(W16#))
 import Data.Bytes.Parser (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
 
@@ -32,6 +33,13 @@ import qualified Data.Fixed as Fixed
 import qualified Data.Bytes.Parser as P
 import qualified GHC.Exts as Exts
 import qualified Prelude as Prelude
+
+-- Implementation Notes
+--
+-- When consuming a Scientific, we are always careful to avoid
+-- forcing the LargeScientific. In situations involving small
+-- numbers, this field is not used, so we do not want to waste time
+-- evaluating it.
 
 data Scientific = Scientific
   {-# UNPACK #-} !Int -- coefficient
@@ -112,16 +120,59 @@ toWord8 (Scientific (I# coeff) (I# e) large) = case toWord8# coeff e large of
   (# (# #) | #) -> Nothing
   (# | w #) -> Just (W8# w)
 
-toWord8# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
-{-# noinline toWord8# #-}
-toWord8# coefficient0# exponent0# large = if exponent0 /= minBound
-  then smallToWord8 coefficient0 exponent0
-  else largeToWord8 large
+toWord16 :: Scientific -> Maybe Word16
+{-# inline toWord16 #-}
+toWord16 (Scientific (I# coeff) (I# e) large) = case toWord16# coeff e large of
+  (# (# #) | #) -> Nothing
+  (# | w #) -> Just (W16# w)
+
+toSmallHelper ::
+     (Int -> Int -> (# (# #) | Word# #) ) -- small
+  -> (LargeScientific -> (# (# #) | Word# #) ) -- large
+  -> Int#
+  -> Int#
+  -> LargeScientific
+  -> (# (# #) | Word# #)
+{-# inline toSmallHelper #-}
+toSmallHelper fromSmall fromLarge coefficient0# exponent0# large0 =
+  if exponent0 /= minBound
+    then fromSmall coefficient0 exponent0
+    else fromLarge large0
   where
   coefficient0 = I# coefficient0#
   exponent0 = I# exponent0#
 
+toWord8# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
+{-# noinline toWord8# #-}
+toWord8# coefficient0# exponent0# large0 = 
+  toSmallHelper smallToWord8 largeToWord8
+    coefficient0# exponent0# large0
+
+toWord16# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
+{-# noinline toWord16# #-}
+toWord16# coefficient0# exponent0# large =
+  toSmallHelper smallToWord16 largeToWord16
+    coefficient0# exponent0# large
+
 -- Arguments are non-normalized coefficient and exponent
+-- With Word8, we can do a neat little trick where we
+-- cap the coefficient at 65536 and the exponent at 5. This
+-- works because a 32-bit signed int can contain 65535e4.
+smallToWord16 :: Int -> Int -> (# (# #) | Word# #)
+smallToWord16 !coefficient0 !exponent0
+  | coefficient0 == 0 = (# | 0## #)
+  | (coefficient,exponent) <- incrementNegativeExp coefficient0 exponent0
+  , exponent >= 0, exponent < 5, coefficient >= 0, coefficient < 65536
+  , r <- exp10 coefficient exponent
+  , y@(W16# y# ) <- fromIntegral @Int @Word16 r
+  , fromIntegral @Word16 @Int y == r
+    = (# | y# #)
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized coefficient and exponent
+-- With Word8, we can do a neat little trick where we
+-- cap the coefficient at 256 and the exponent at 3. This
+-- works because a 32-bit signed int can contain 255e2.
 smallToWord8 :: Int -> Int -> (# (# #) | Word# #)
 smallToWord8 !coefficient0 !exponent0
   | coefficient0 == 0 = (# | 0## #)
@@ -144,6 +195,19 @@ largeToWord8 (LargeScientific coefficient0 exponent0)
   , fromIntegral @Word8 @Int y == r
     = (# | y# #)
   | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized
+largeToWord16 :: LargeScientific -> (# (# #) | Word# #)
+largeToWord16 (LargeScientific coefficient0 exponent0)
+  | coefficient0 == 0 = (# | 0## #)
+  | (coefficient,exponent) <- largeIncrementNegativeExp coefficient0 exponent0
+  , exponent >= 0, exponent < 5, coefficient >= 0, coefficient < 65536
+  , r <- exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int exponent)
+  , y@(W16# y# ) <- fromIntegral @Int @Word16 r
+  , fromIntegral @Word16 @Int y == r
+    = (# | y# #)
+  | otherwise = (# (# #) | #)
+
 
 -- Precondition: the exponent is non-negative
 exp10 :: Int -> Int -> Int
