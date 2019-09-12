@@ -30,6 +30,8 @@ main = defaultMain
     [ bgroup "parser"
       [ bench "ten-small"
           (whnf (\b -> P.parseByteArray decodeTen b) tenSmall)
+      , bench "ten-large"
+          (whnf (\b -> P.parseByteArray decodeTen b) tenLarge)
       ]
     , bgroup "conversion"
       [ bench "twenty-word16"
@@ -42,6 +44,10 @@ main = defaultMain
         (\b -> Atto.parseOnly
           (aesonDecodeN 10 []) (fromPinned b)
         ) tenSmall
+      , bench "ten-large" $ whnf
+        (\b -> Atto.parseOnly
+          (aesonDecodeN 10 []) (fromPinned b)
+        ) tenLarge
       ]
     , bgroup "conversion"
       [ bench "twenty-word16"
@@ -66,6 +72,24 @@ tenSmall = pin $ Bytes.toByteArray $ Bytes.fromAsciiString $ concat
   , ",0000.002"
   , ",0000.002E1"
   ]
+
+-- TODO: In the test suite, we should confirm that parsing this
+-- actually succeeds. We intentionally avoid leading plus signs
+-- here so that we can compare against aeson.
+tenLarge :: ByteArray
+tenLarge = pin $ Bytes.toByteArray $ Bytes.fromAsciiString $ concat
+  [ ",4221465241250205246754620201240240201451991999956"
+  , ",242422432499393113113131313131533753.02031243210e13432"
+  , ",-0.999999999999999999999999999999999999"
+  , ",4.46246246526345643246256423645246224e100"
+  , ",42463523462.46246243246256423645246224E24625"
+  , ",-82463523462.56246243246256423645246224e-24625"
+  , ",82463523462.56246243246256423645246224e+24625"
+  , ",-201.562462432462564236452462240240420"
+  , ",-0.777777777777777777777777777777777e-777"
+  , ",0.987777777777777777777777777777777e-42"
+  ]
+
 
 -- All of these can fit inside a Word16.
 twentyPairs :: SmallArray (Int,Int)

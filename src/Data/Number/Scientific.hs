@@ -329,59 +329,53 @@ parserNegatedUnsignedUtf8Bytes# e =
 parseLarge :: e -> Parser e s LargeScientific
 parseLarge e = do
   coeff <- Latin.decUnsignedInteger e
-  Latin.opt# `Parser.bindFromMaybeCharToLifted` \mc -> case mc of
-    (# (# #) | #) -> pure (LargeScientific coeff 0)
-    (# | c #) -> case c of
-      '.'# -> do
-        !start <- Unsafe.cursor
-        afterDot <- Latin.decUnsignedInteger e
-        !end <- Unsafe.cursor
-        let !logDenom = end - start
-            !coeffFinal = (integerTenExp coeff logDenom) + afterDot
-        Latin.trySatisfy (\c -> c == 'e' || c == 'E') >>= \case
-          True -> attemptLargeExp e coeffFinal (unI (Prelude.negate logDenom))
-          False -> pure $! LargeScientific coeffFinal $! fromIntegral $! Prelude.negate logDenom
-      'e'# -> attemptLargeExp e coeff 0#
-      'E'# -> attemptLargeExp e coeff 0#
-      _ -> do
-        Unsafe.unconsume 1
-        pure (LargeScientific coeff 0)
+  Latin.trySatisfyThen (pure (LargeScientific coeff 0)) $ \c -> case c of
+    '.' -> Just $ do
+      !start <- Unsafe.cursor
+      afterDot <- Latin.decUnsignedInteger e
+      !end <- Unsafe.cursor
+      let !logDenom = end - start
+          !coeffFinal = (integerTenExp coeff logDenom) + afterDot
+      Latin.trySatisfy (\c -> c == 'e' || c == 'E') >>= \case
+        True -> attemptLargeExp e coeffFinal (unI (Prelude.negate logDenom))
+        False -> pure $! LargeScientific coeffFinal $! fromIntegral $! Prelude.negate logDenom
+    'e' -> Just (attemptLargeExp e coeff 0# )
+    'E' -> Just (attemptLargeExp e coeff 0# )
+    _ -> Nothing
 
 -- handles unsigned small numbers
 parseSmall# :: Parser () s (# Int#, Int# #)
 {-# noinline parseSmall# #-}
 parseSmall# =
   Latin.decUnsignedInt# () `Parser.bindFromIntToIntPair` \coeff# ->
-  Latin.opt# `Parser.bindFromMaybeCharToIntPair` \mc -> case mc of
-    (# (# #) | #) -> Parser.pureIntPair (# coeff#, 0# #)
-    (# | c #) -> case c of
-      '.'# ->
-        Unsafe.cursor `Parser.bindFromLiftedToIntPair` \start ->
-        Latin.decUnsignedInt# () `Parser.bindFromIntToIntPair` \afterDot# ->
-        Unsafe.cursor `Parser.bindFromLiftedToIntPair` \end ->
-        let !logDenom = end - start
-            goCoeff !coeffShifted !exponent = case exponent of
-              0 ->
-                let !(I# coeffShifted# ) = coeffShifted
-                    !(# coeffFinal, overflowed #) =
-                      Exts.addIntC# coeffShifted# afterDot#
-                 in case overflowed of
-                  0# -> Latin.trySatisfy (\c -> c == 'e' || c == 'E') `Parser.bindFromLiftedToIntPair` \b -> case b of
-                    True -> attemptSmallExp coeffFinal (unI (Prelude.negate logDenom))
-                    False -> Parser.pureIntPair (# coeffFinal, unI (Prelude.negate logDenom) #)
-                  _ -> Parser.failIntPair ()
-              _ ->
-                let coeffShifted' = coeffShifted * 10
-                 in if coeffShifted' >= coeffShifted
-                      then goCoeff coeffShifted' (exponent - 1)
-                      -- If we overflow, fail so that the parser
-                      -- for large number will handle it instead.
-                      else Parser.failIntPair ()
-         in goCoeff (I# coeff# ) logDenom
-      'e'# -> attemptSmallExp coeff# 0#
-      'E'# -> attemptSmallExp coeff# 0#
-      _ -> Unsafe.unconsume 1 `Parser.bindFromLiftedToIntPair` \_ ->
-        Parser.pureIntPair (# coeff#, 0# #)
+  Latin.trySatisfyThen (Parser.pureIntPair (# coeff#, 0# #)) $ \c -> case c of
+    '.' -> Just $
+      Unsafe.cursor `Parser.bindFromLiftedToIntPair` \start ->
+      Latin.decUnsignedInt# () `Parser.bindFromIntToIntPair` \afterDot# ->
+      Unsafe.cursor `Parser.bindFromLiftedToIntPair` \end ->
+      let !logDenom = end - start
+          goCoeff !coeffShifted !exponent = case exponent of
+            0 ->
+              let !(I# coeffShifted# ) = coeffShifted
+                  !(# coeffFinal, overflowed #) =
+                    Exts.addIntC# coeffShifted# afterDot#
+               in case overflowed of
+                0# -> Latin.trySatisfy (\c -> c == 'e' || c == 'E') `Parser.bindFromLiftedToIntPair` \b -> case b of
+                  True -> attemptSmallExp coeffFinal (unI (Prelude.negate logDenom))
+                  False -> Parser.pureIntPair (# coeffFinal, unI (Prelude.negate logDenom) #)
+                _ -> Parser.failIntPair ()
+            _ ->
+              let coeffShifted' = coeffShifted * 10
+               in if coeffShifted' >= coeffShifted
+                    then goCoeff coeffShifted' (exponent - 1)
+                    -- If we overflow, fail so that the parser
+                    -- for large number will handle it instead.
+                    else Parser.failIntPair ()
+       in goCoeff (I# coeff# ) logDenom
+    'e' -> Just (attemptSmallExp coeff# 0#)
+    'E' -> Just (attemptSmallExp coeff# 0#)
+    _ -> Nothing
+
 
 -- The delta passed to this is only ever a negative integer.
 attemptLargeExp ::
