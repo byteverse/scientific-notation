@@ -17,9 +17,11 @@ module Data.Number.Scientific
   , toWord16
     -- * Decode
   , parserSignedUtf8Bytes
+  , parserUnsignedUtf8Bytes
+  , parserNegatedUtf8Bytes
   , parserSignedUtf8Bytes#
   , parserUnsignedUtf8Bytes#
-  , parserNegatedUnsignedUtf8Bytes#
+  , parserNegatedUtf8Bytes#
   ) where
 
 import Prelude hiding (negate)
@@ -268,7 +270,7 @@ smallNormalize# w# e# = case quotRem (I# w# ) 10 of
     _ -> (# w#, e# #)
 
 -- | Parse a number that is encoded in UTF-8 and in scientific notation.
--- All of these would be accepted:
+-- All of these are accepted:
 --
 -- * 330e-1
 -- * 330e+1
@@ -283,12 +285,21 @@ smallNormalize# w# e# = case quotRem (I# w# ) 10 of
 parserSignedUtf8Bytes :: e -> Parser e s Scientific
 parserSignedUtf8Bytes e = boxScientific (parserSignedUtf8Bytes# e)
 
+-- | Variant of 'parserSignedUtf8Bytes' that rejects strings with
+-- a leading plus or minus sign.
+parserUnsignedUtf8Bytes :: e -> Parser e s Scientific
+parserUnsignedUtf8Bytes e = boxScientific (parserUnsignedUtf8Bytes# e)
+
+-- | Variant of 'parserUnsignedUtf8Bytes' that negates the result.
+parserNegatedUtf8Bytes :: e -> Parser e s Scientific
+parserNegatedUtf8Bytes e = boxScientific (parserNegatedUtf8Bytes# e)
+
 parserSignedUtf8Bytes# ::
      e -- ^ Error message
   -> Parser e s Scientific#
 parserSignedUtf8Bytes# e = Latin.any e `bindToScientific` \c -> case c of
   '+' -> parserUnsignedUtf8Bytes# e
-  '-' -> parserNegatedUnsignedUtf8Bytes# e
+  '-' -> parserNegatedUtf8Bytes# e
   _ -> Unsafe.unconsume 1 `bindToScientific` \_ ->
     parserUnsignedUtf8Bytes# e
 
@@ -303,10 +314,10 @@ parserUnsignedUtf8Bytes# e =
   upcastLargeScientific (parseLarge e)
 
 -- Negates the result after parsing the bytes.
-parserNegatedUnsignedUtf8Bytes# ::
+parserNegatedUtf8Bytes# ::
      e -- ^ Error message
   -> Parser e s Scientific#
-parserNegatedUnsignedUtf8Bytes# e =
+parserNegatedUtf8Bytes# e =
   mapNegateIntPairToScientific parseSmall#
   `orElseScientific`
   upcastNegatedLargeScientific (parseLarge e)
