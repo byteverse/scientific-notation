@@ -30,7 +30,9 @@ import Data.Bytes.Parser (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
 
 import qualified Data.Fixed as Fixed
-import qualified Data.Bytes.Parser as P
+import qualified Data.Bytes.Parser as Parser
+import qualified Data.Bytes.Parser.Latin as Latin
+import qualified Data.Bytes.Parser.Unsafe as Unsafe
 import qualified GHC.Exts as Exts
 import qualified Prelude as Prelude
 
@@ -284,12 +286,10 @@ parserSignedUtf8Bytes e = boxScientific (parserSignedUtf8Bytes# e)
 parserSignedUtf8Bytes# ::
      e -- ^ Error message
   -> Parser e s Scientific#
-parserSignedUtf8Bytes# e = P.any e `bindToScientific` \c -> case c of
-  43 -> -- plus sign
-    parserUnsignedUtf8Bytes# e
-  45 -> -- minus sign
-    parserNegatedUnsignedUtf8Bytes# e
-  _ -> P.unconsume 1 `bindToScientific` \_ ->
+parserSignedUtf8Bytes# e = Latin.any e `bindToScientific` \c -> case c of
+  '+' -> parserUnsignedUtf8Bytes# e
+  '-' -> parserNegatedUnsignedUtf8Bytes# e
+  _ -> Unsafe.unconsume 1 `bindToScientific` \_ ->
     parserUnsignedUtf8Bytes# e
 
 -- | Variant of 'parseUnsignedUtf8Bytes' where all arguments are
@@ -328,34 +328,37 @@ parserNegatedUnsignedUtf8Bytes# e =
 
 parseLarge :: e -> Parser e s LargeScientific
 parseLarge e = do
-  coeff <- P.decPositiveInteger e
-  P.isEndOfInput >>= \case
-    True -> pure $! LargeScientific coeff 0
-    False -> P.anyUnsafeIso8859_1# `P.bindChar` \c -> case c of
+  coeff <- Latin.decUnsignedInteger e
+  Latin.opt# `Parser.bindFromMaybeCharToLifted` \mc -> case mc of
+    (# (# #) | #) -> pure (LargeScientific coeff 0)
+    (# | c #) -> case c of
       '.'# -> do
-        !start <- P.cursor
-        afterDot <- P.decPositiveInteger e
-        !end <- P.cursor
+        !start <- Unsafe.cursor
+        afterDot <- Latin.decUnsignedInteger e
+        !end <- Unsafe.cursor
         let !logDenom = end - start
             !coeffFinal = (integerTenExp coeff logDenom) + afterDot
-        P.isEndOfInput >>= \case
-          True -> pure $! LargeScientific coeffFinal $! fromIntegral $! Prelude.negate logDenom
-          False -> P.anyUnsafeIso8859_1# `P.bindChar` \x ->
-            attemptLargeExp e x coeffFinal (unI (Prelude.negate logDenom))
-      _ -> attemptLargeExp e c coeff 0#
+        Latin.trySatisfy (\c -> c == 'e' || c == 'E') >>= \case
+          True -> attemptLargeExp e coeffFinal (unI (Prelude.negate logDenom))
+          False -> pure $! LargeScientific coeffFinal $! fromIntegral $! Prelude.negate logDenom
+      'e'# -> attemptLargeExp e coeff 0#
+      'E'# -> attemptLargeExp e coeff 0#
+      _ -> do
+        Unsafe.unconsume 1
+        pure (LargeScientific coeff 0)
 
 -- handles unsigned small numbers
 parseSmall# :: Parser () s (# Int#, Int# #)
 {-# noinline parseSmall# #-}
 parseSmall# =
-  P.decUnsignedInt# () `P.bindIntToIntPair` \coeff# ->
-  P.isEndOfInput `P.bindToIntPair` \case
-    True -> P.pureIntPair (# coeff#, 0# #)
-    False -> P.anyUnsafeIso8859_1# `P.bindCharToIntPair` \c -> case c of
+  Latin.decUnsignedInt# () `Parser.bindFromIntToIntPair` \coeff# ->
+  Latin.opt# `Parser.bindFromMaybeCharToIntPair` \mc -> case mc of
+    (# (# #) | #) -> Parser.pureIntPair (# coeff#, 0# #)
+    (# | c #) -> case c of
       '.'# ->
-        P.cursor `P.bindToIntPair` \start ->
-        P.decUnsignedInt# () `P.bindIntToIntPair` \afterDot# ->
-        P.cursor `P.bindToIntPair` \end ->
+        Unsafe.cursor `Parser.bindFromLiftedToIntPair` \start ->
+        Latin.decUnsignedInt# () `Parser.bindFromIntToIntPair` \afterDot# ->
+        Unsafe.cursor `Parser.bindFromLiftedToIntPair` \end ->
         let !logDenom = end - start
             goCoeff !coeffShifted !exponent = case exponent of
               0 ->
@@ -363,62 +366,45 @@ parseSmall# =
                     !(# coeffFinal, overflowed #) =
                       Exts.addIntC# coeffShifted# afterDot#
                  in case overflowed of
-                  0# -> P.isEndOfInput `P.bindToIntPair` \case
-                    True -> P.pureIntPair (# coeffFinal, unI (Prelude.negate logDenom) #)
-                    False -> P.anyUnsafeIso8859_1# `P.bindCharToIntPair` \x ->
-                      (attemptSmallExp x coeffFinal (unI (Prelude.negate logDenom)))
-                  _ -> P.failIntPair ()
+                  0# -> Latin.trySatisfy (\c -> c == 'e' || c == 'E') `Parser.bindFromLiftedToIntPair` \b -> case b of
+                    True -> attemptSmallExp coeffFinal (unI (Prelude.negate logDenom))
+                    False -> Parser.pureIntPair (# coeffFinal, unI (Prelude.negate logDenom) #)
+                  _ -> Parser.failIntPair ()
               _ ->
                 let coeffShifted' = coeffShifted * 10
                  in if coeffShifted' >= coeffShifted
                       then goCoeff coeffShifted' (exponent - 1)
                       -- If we overflow, fail so that the parser
                       -- for large number will handle it instead.
-                      else P.failIntPair ()
+                      else Parser.failIntPair ()
          in goCoeff (I# coeff# ) logDenom
-      _ -> attemptSmallExp c coeff# 0#
-
+      'e'# -> attemptSmallExp coeff# 0#
+      'E'# -> attemptSmallExp coeff# 0#
+      _ -> Unsafe.unconsume 1 `Parser.bindFromLiftedToIntPair` \_ ->
+        Parser.pureIntPair (# coeff#, 0# #)
 
 -- The delta passed to this is only ever a negative integer.
 attemptLargeExp ::
      e
-  -> Exts.Char#
   -> Integer
   -> Int#
   -> Parser e s LargeScientific
 {-# noinline attemptLargeExp #-}
-attemptLargeExp e !c# signedCoeff !deltaExp# = case c# of
-  'e'# -> do
-    exponent <- P.decSignedInteger e
-    let !exponent' = exponent + fromIntegral (I# deltaExp# )
-    pure (LargeScientific signedCoeff exponent')
-  'E'# -> do
-    exponent <- P.decSignedInteger e
-    let !exponent' = exponent + fromIntegral (I# deltaExp# )
-    pure (LargeScientific signedCoeff exponent')
-  _ -> do
-    P.unconsume 1
-    pure (LargeScientific signedCoeff 0)
+attemptLargeExp e signedCoeff !deltaExp# = do
+  exponent <- Latin.decSignedInteger e
+  let !exponent' = exponent + fromIntegral (I# deltaExp# )
+  pure (LargeScientific signedCoeff exponent')
 
 -- The delta passed to this is only ever a negative integer.
 -- It is also between -21 and -1. (Or maybe -22 or -20, not sure).
-attemptSmallExp :: Exts.Char# -> Int# -> Int# -> Parser () s (# Int#, Int# #)
+attemptSmallExp :: Int# -> Int# -> Parser () s (# Int#, Int# #)
 {-# noinline attemptSmallExp #-}
-attemptSmallExp !c# !signedCoeff# !deltaExp# = P.unboxIntPair $ case c# of
-  'e'# -> do
-    e <- P.decSignedInt ()
-    -- I give this a little extra padding just to be safe.
-    if e > (minBound + padding)
-      then pure (signedCoeff, e + deltaExp)
-      else P.fail ()
-  'E'# -> do
-    e <- P.decSignedInt ()
-    if e > (minBound + padding)
-      then pure (signedCoeff, e + deltaExp)
-      else P.fail ()
-  _ -> do
-    P.unconsume 1
-    pure (signedCoeff, deltaExp)
+attemptSmallExp !signedCoeff# !deltaExp# = Parser.unboxIntPair $ do
+  e <- Latin.decSignedInt ()
+  -- I give this a little extra padding just to be safe.
+  if e > (minBound + padding)
+    then pure (signedCoeff, e + deltaExp)
+    else Parser.fail ()
   where
   signedCoeff = I# signedCoeff#
   deltaExp = I# deltaExp#

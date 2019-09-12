@@ -1,1 +1,7 @@
-packages: . ../bytesmith
+packages: .
+
+source-repository-package
+  type: git
+  location: https://github.com/andrewthad/bytesmith
+  tag: 31f501a2a7749195486a9a7e0d951dd829271982
+

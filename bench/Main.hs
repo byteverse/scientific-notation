@@ -16,6 +16,7 @@ import GHC.ForeignPtr (ForeignPtr(ForeignPtr))
 import qualified GHC.Exts as Exts
 import qualified Data.Bytes as Bytes
 import qualified Data.Bytes.Parser as P
+import qualified Data.Bytes.Parser.Latin as Latin
 import qualified Data.Primitive as PM
 import qualified Data.Attoparsec.ByteString.Char8 as Atto
 import qualified Data.Aeson.Parser as Aeson
@@ -112,7 +113,7 @@ decodeTen = do
   arr <- P.effect (PM.newSmallArray 10 errorThunk)
   let go !ix = if ix >= 0
         then do
-          P.ascii () ',' 
+          Latin.char () ',' 
           !num <- SCI.parserSignedUtf8Bytes ()
           P.effect (PM.writeSmallArray arr ix num)
           go (ix - 1)
