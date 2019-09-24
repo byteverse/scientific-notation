@@ -13,9 +13,14 @@ module Data.Number.Scientific
   , large
   , fromFixed
     -- * Consume
+  , toWord
   , toWord8
   , toWord16
   , toWord32
+  , toWord64
+  , toInt
+  , toInt32
+  , toInt64
     -- * Decode
   , parserSignedUtf8Bytes
   , parserTrailingUtf8Bytes
@@ -32,8 +37,8 @@ module Data.Number.Scientific
 import Prelude hiding (negate)
 
 import GHC.Exts (Int#,Word#,Int(I#),(+#))
-import GHC.Word (Word(W#),Word8(W8#),Word16(W16#),Word32(W32#))
-import Data.Bits ((.&.))
+import GHC.Word (Word(W#),Word8(W8#),Word16(W16#),Word32(W32#),Word64(W64#))
+import GHC.Int (Int64(I64#),Int32(I32#))
 import Data.Bytes.Parser (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
 
@@ -142,6 +147,36 @@ toWord32 (Scientific (I# coeff) (I# e) largeNum) = case toWord32# coeff e largeN
   (# (# #) | #) -> Nothing
   (# | w #) -> Just (W32# w)
 
+toInt32 :: Scientific -> Maybe Int32
+{-# inline toInt32 #-}
+toInt32 (Scientific (I# coeff) (I# e) largeNum) = case toInt32# coeff e largeNum of
+  (# (# #) | #) -> Nothing
+  (# | w #) -> Just (I32# w)
+
+toWord64 :: Scientific -> Maybe Word64
+{-# inline toWord64 #-}
+toWord64 (Scientific (I# coeff) (I# e) largeNum) = case toWord# coeff e largeNum of
+  (# (# #) | #) -> Nothing
+  (# | w #) -> Just (W64# w)
+
+toWord :: Scientific -> Maybe Word
+{-# inline toWord #-}
+toWord (Scientific (I# coeff) (I# e) largeNum) = case toWord# coeff e largeNum of
+  (# (# #) | #) -> Nothing
+  (# | w #) -> Just (W# w)
+
+toInt :: Scientific -> Maybe Int
+{-# inline toInt #-}
+toInt (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum of
+  (# (# #) | #) -> Nothing
+  (# | i #) -> Just (I# i)
+
+toInt64 :: Scientific -> Maybe Int64
+{-# inline toInt64 #-}
+toInt64 (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum of
+  (# (# #) | #) -> Nothing
+  (# | i #) -> Just (I64# i)
+
 toSmallHelper ::
      (Int -> Int -> (# (# #) | Word# #) ) -- small
   -> (LargeScientific -> (# (# #) | Word# #) ) -- large
@@ -157,6 +192,23 @@ toSmallHelper fromSmall fromLarge coefficient0# exponent0# large0 =
   where
   coefficient0 = I# coefficient0#
   exponent0 = I# exponent0#
+
+toSmallIntHelper ::
+     (Int -> Int -> (# (# #) | Int# #) ) -- small
+  -> (LargeScientific -> (# (# #) | Int# #) ) -- large
+  -> Int#
+  -> Int#
+  -> LargeScientific
+  -> (# (# #) | Int# #)
+{-# inline toSmallIntHelper #-}
+toSmallIntHelper fromSmall fromLarge coefficient0# exponent0# large0 =
+  if exponent0 /= minBound
+    then fromSmall coefficient0 exponent0
+    else fromLarge large0
+  where
+  coefficient0 = I# coefficient0#
+  exponent0 = I# exponent0#
+
 
 toWord8# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
 {-# noinline toWord8# #-}
@@ -176,6 +228,24 @@ toWord32# coefficient0# exponent0# largeNum =
   toSmallHelper smallToWord32 largeToWord32
     coefficient0# exponent0# largeNum
 
+toInt32# :: Int# -> Int# -> LargeScientific -> (# (# #) | Int# #)
+{-# noinline toInt32# #-}
+toInt32# coefficient0# exponent0# largeNum =
+  toSmallIntHelper smallToInt32 largeToInt32
+    coefficient0# exponent0# largeNum
+
+toWord# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
+{-# noinline toWord# #-}
+toWord# coefficient0# exponent0# largeNum =
+  toSmallHelper smallToWord largeToWord
+    coefficient0# exponent0# largeNum
+
+toInt# :: Int# -> Int# -> LargeScientific -> (# (# #) | Int# #)
+{-# noinline toInt# #-}
+toInt# coefficient0# exponent0# largeNum =
+  toSmallIntHelper smallToInt largeToInt
+    coefficient0# exponent0# largeNum
+
 -- Arguments are non-normalized coefficient and exponent.
 -- We cannot use the same trick that we use for Word8 and
 -- Word16.
@@ -185,6 +255,41 @@ smallToWord32 !coefficient0 !exponent0
   | (coefficient,expon) <- incrementNegativeExp coefficient0 exponent0
   , expon >= 0, expon < 10, coefficient >= 0, coefficient <= 0xFFFFFFFF
     = word32Exp10 (fromIntegral @Int @Word coefficient) expon
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized coefficient and exponent.
+smallToInt32 :: Int -> Int -> (# (# #) | Int# #)
+smallToInt32 !coefficient0 !exponent0
+  | coefficient0 == 0 = (# | 0# #)
+  | (coefficient,expon) <- incrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 10
+  , coefficient >= fromIntegral @Int32 @Int (minBound :: Int32)
+  , coefficient <= fromIntegral @Int32 @Int (maxBound :: Int32)
+    = if coefficient >= 0
+        then posInt32Exp10 coefficient expon
+        else negInt32Exp10 coefficient expon
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized coefficient and exponent.
+-- We cannot use the same trick that we use for Word8 and
+-- Word16.
+smallToWord :: Int -> Int -> (# (# #) | Word# #)
+smallToWord !coefficient0 !exponent0
+  | coefficient0 == 0 = (# | 0## #)
+  | (coefficient,expon) <- incrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 30, coefficient >= 0
+    = wordExp10 (fromIntegral @Int @Word coefficient) expon
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized coefficient and exponent.
+smallToInt :: Int -> Int -> (# (# #) | Int# #)
+smallToInt !coefficient0 !exponent0
+  | coefficient0 == 0 = (# | 0# #)
+  | (coefficient,expon) <- incrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 30
+    = if coefficient >= 0
+        then posIntExp10 coefficient expon
+        else negIntExp10 coefficient expon
   | otherwise = (# (# #) | #)
 
 -- Arguments are non-normalized coefficient and exponent
@@ -247,20 +352,141 @@ largeToWord32 (LargeScientific coefficient0 exponent0)
   | coefficient0 == 0 = (# | 0## #)
   | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent0
   , expon >= 0, expon < 10, coefficient >= 0, coefficient <= 0xFFFFFFFF
-  , r <- exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
-  , y@(W32# y# ) <- fromIntegral @Int @Word32 r
-  , fromIntegral @Word32 @Int y == r
-    = (# | y# #)
+    = word32Exp10 (fromIntegral @Integer @Word coefficient) (fromIntegral @Integer @Int expon)
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized, this targets the native word size
+largeToWord :: LargeScientific -> (# (# #) | Word# #)
+largeToWord (LargeScientific coefficient0 exponent0)
+  | coefficient0 == 0 = (# | 0## #)
+  | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 30, coefficient >= 0, coefficient <= (fromIntegral @Word @Integer maxBound)
+    = wordExp10 (fromIntegral @Integer @Word coefficient) (fromIntegral @Integer @Int expon)
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized
+largeToInt32 :: LargeScientific -> (# (# #) | Int# #)
+largeToInt32 (LargeScientific coefficient0 exponent0)
+  | coefficient0 == 0 = (# | 0# #)
+  | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 10
+  , coefficient >= (fromIntegral @Int32 @Integer minBound)
+  , coefficient <= (fromIntegral @Int32 @Integer maxBound)
+    = if coefficient >= 0
+        then posInt32Exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
+        else negInt32Exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized, this targets the native word size
+largeToInt :: LargeScientific -> (# (# #) | Int# #)
+largeToInt (LargeScientific coefficient0 exponent0)
+  | coefficient0 == 0 = (# | 0# #)
+  | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 30
+  , coefficient >= (fromIntegral @Int @Integer minBound)
+  , coefficient <= (fromIntegral @Int @Integer maxBound)
+    = if coefficient >= 0
+        then posIntExp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
+        else negIntExp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
   | otherwise = (# (# #) | #)
 
 -- Precondition: the exponent is non-negative. This returns
--- an unboxed Nothing on overflow.
+-- an unboxed Nothing on overflow. This implementation should
+-- work even on a 32-bit platform.
 word32Exp10 :: Word -> Int -> (# (# #) | Word# #)
 word32Exp10 !a@(W# a# ) !e = case e of
   0 -> (# | a# #)
-  _ -> let a' = 0xFFFFFFFF .&. (a * 10) in if a' >= a
-    then word32Exp10 a' (e - 1)
+  _ -> let (overflow, a') = timesWord2 a 10 in
+    if overflow || (a' > 0xFFFFFFFF)
+      then (# (# #) | #)
+      else word32Exp10 a' (e - 1)
+
+-- Precondition: the exponent is non-negative, and the
+-- coefficient is non-negative. This returns an unboxed
+-- Nothing on overflow.
+posInt32Exp10 :: Int -> Int -> (# (# #) | Int# #)
+posInt32Exp10 !a@(I# a# ) !e = case e of
+  0 -> (# | a# #)
+  _ -> if a < posInt32PreUpper
+    then let a' = a * 10 in
+      if a' >= a && a' <= fromIntegral (maxBound :: Int32)
+        then posInt32Exp10 a' (e - 1)
+        else (# (# #) | #)
     else (# (# #) | #)
+
+-- Precondition: the exponent is non-negative, and the
+-- coefficient is non-positive. This returns an unboxed
+-- Nothing on overflow.
+negInt32Exp10 :: Int -> Int -> (# (# #) | Int# #)
+negInt32Exp10 !a@(I# a# ) !e = case e of
+  0 -> (# | a# #)
+  _ -> if a > negInt32PreLower
+    then let a' = a * 10 in
+      if a' <= a && a' >= fromIntegral (minBound :: Int32)
+        then negInt32Exp10 a' (e - 1)
+        else (# (# #) | #)
+    else (# (# #) | #)
+
+-- Precondition: the exponent is non-negative. This returns
+-- an unboxed Nothing on overflow.
+wordExp10 :: Word -> Int -> (# (# #) | Word# #)
+wordExp10 !a@(W# a# ) !e = case e of
+  0 -> (# | a# #)
+  _ -> let (overflow, a') = timesWord2 a 10 in if overflow
+    then (# (# #) | #)
+    else wordExp10 a' (e - 1)
+
+-- Precondition: The exponent is non-negative, and the
+-- coefficient is non-negative. This returns an unboxed
+-- Nothing on overflow.
+posIntExp10 :: Int -> Int -> (# (# #) | Int# #)
+posIntExp10 !a@(I# a# ) !e = case e of
+  0 -> (# | a# #)
+  _ -> if a < posIntPreUpper
+    then let a' = a * 10 in
+      if a' >= a
+        then posIntExp10 a' (e - 1)
+        else (# (# #) | #)
+    else (# (# #) | #)
+
+-- Precondition: The exponent is non-negative, and the
+-- coefficient is non-positive. This returns an unboxed
+-- Nothing on overflow.
+negIntExp10 :: Int -> Int -> (# (# #) | Int# #)
+negIntExp10 !a@(I# a# ) !e = case e of
+  0 -> (# | a# #)
+  _ -> if a > negIntPreLower
+    then let a' = a * 10 in
+      if a' <= a
+        then negIntExp10 a' (e - 1)
+        else (# (# #) | #)
+    else (# (# #) | #)
+
+-- What are these lower and upper bounds? The problem that
+-- we are trying to solve is that overflow is tricky to detect
+-- when we multiply by ten. By putting an upper (or lower)
+-- bound on the thing we are multiplying by ten, we can
+-- make overflow detection simple: just test that the
+-- accumulator became larger (or smaller when dealing with
+-- a negative coefficient) than it previously was.
+
+posIntPreUpper :: Int
+posIntPreUpper = div maxBound 10 + 10
+
+negIntPreLower :: Int
+negIntPreLower = div minBound 10 - 10
+
+posInt32PreUpper :: Int
+posInt32PreUpper = 214748370
+
+negInt32PreLower :: Int
+negInt32PreLower = (-214748370)
+
+-- Bool is true if overflow happened
+timesWord2 :: Word -> Word -> (Bool, Word)
+timesWord2 (W# a) (W# b) =
+  let !(# c, r #) = Exts.timesWord2# a b
+   in (case c of { 0## -> False; _ -> True}, W# r)
 
 -- Precondition: the exponent is non-negative
 exp10 :: Int -> Int -> Int
