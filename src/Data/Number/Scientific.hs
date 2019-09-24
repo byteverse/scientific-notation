@@ -17,17 +17,21 @@ module Data.Number.Scientific
   , toWord16
     -- * Decode
   , parserSignedUtf8Bytes
+  , parserTrailingUtf8Bytes
   , parserUnsignedUtf8Bytes
   , parserNegatedUtf8Bytes
+  , parserNegatedTrailingUtf8Bytes
   , parserSignedUtf8Bytes#
+  , parserTrailingUtf8Bytes#
   , parserUnsignedUtf8Bytes#
   , parserNegatedUtf8Bytes#
+  , parserNegatedTrailingUtf8Bytes#
   ) where
 
 import Prelude hiding (negate)
 
-import GHC.Exts (Int#,Word#,Int(I#),(+#),(*#))
-import GHC.Word (Word(W#),Word8(W8#),Word16(W16#))
+import GHC.Exts (Int#,Word#,Int(I#),(+#))
+import GHC.Word (Word8(W8#),Word16(W16#))
 import Data.Bytes.Parser (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
 
@@ -53,9 +57,9 @@ data Scientific = Scientific
 type Scientific# = (# Int#, Int#, LargeScientific #)
 
 instance Show Scientific where
-  showsPrec _ (Scientific coeff e large) = if e /= minBound
+  showsPrec _ (Scientific coeff e largeNum) = if e /= minBound
     then showsPrec 0 coeff . showChar 'e' . showsPrec 0 e
-    else case large of
+    else case largeNum of
       LargeScientific coeffLarge eLarge ->
         showsPrec 0 coeffLarge . showChar 'e' . showsPrec 0 eLarge
 
@@ -120,13 +124,13 @@ fromFixed n@(MkFixed coeff) =
 
 toWord8 :: Scientific -> Maybe Word8
 {-# inline toWord8 #-}
-toWord8 (Scientific (I# coeff) (I# e) large) = case toWord8# coeff e large of
+toWord8 (Scientific (I# coeff) (I# e) largeNum) = case toWord8# coeff e largeNum of
   (# (# #) | #) -> Nothing
   (# | w #) -> Just (W8# w)
 
 toWord16 :: Scientific -> Maybe Word16
 {-# inline toWord16 #-}
-toWord16 (Scientific (I# coeff) (I# e) large) = case toWord16# coeff e large of
+toWord16 (Scientific (I# coeff) (I# e) largeNum) = case toWord16# coeff e largeNum of
   (# (# #) | #) -> Nothing
   (# | w #) -> Just (W16# w)
 
@@ -154,9 +158,9 @@ toWord8# coefficient0# exponent0# large0 =
 
 toWord16# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
 {-# noinline toWord16# #-}
-toWord16# coefficient0# exponent0# large =
+toWord16# coefficient0# exponent0# largeNum =
   toSmallHelper smallToWord16 largeToWord16
-    coefficient0# exponent0# large
+    coefficient0# exponent0# largeNum
 
 -- Arguments are non-normalized coefficient and exponent
 -- With Word8, we can do a neat little trick where we
@@ -165,9 +169,9 @@ toWord16# coefficient0# exponent0# large =
 smallToWord16 :: Int -> Int -> (# (# #) | Word# #)
 smallToWord16 !coefficient0 !exponent0
   | coefficient0 == 0 = (# | 0## #)
-  | (coefficient,exponent) <- incrementNegativeExp coefficient0 exponent0
-  , exponent >= 0, exponent < 5, coefficient >= 0, coefficient < 65536
-  , r <- exp10 coefficient exponent
+  | (coefficient,expon) <- incrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 5, coefficient >= 0, coefficient < 65536
+  , r <- exp10 coefficient expon
   , y@(W16# y# ) <- fromIntegral @Int @Word16 r
   , fromIntegral @Word16 @Int y == r
     = (# | y# #)
@@ -180,9 +184,9 @@ smallToWord16 !coefficient0 !exponent0
 smallToWord8 :: Int -> Int -> (# (# #) | Word# #)
 smallToWord8 !coefficient0 !exponent0
   | coefficient0 == 0 = (# | 0## #)
-  | (coefficient,exponent) <- incrementNegativeExp coefficient0 exponent0
-  , exponent >= 0, exponent < 3, coefficient >= 0, coefficient < 256
-  , r <- exp10 coefficient exponent
+  | (coefficient,expon) <- incrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 3, coefficient >= 0, coefficient < 256
+  , r <- exp10 coefficient expon
   , y@(W8# y# ) <- fromIntegral @Int @Word8 r
   , fromIntegral @Word8 @Int y == r
     = (# | y# #)
@@ -192,9 +196,9 @@ smallToWord8 !coefficient0 !exponent0
 largeToWord8 :: LargeScientific -> (# (# #) | Word# #)
 largeToWord8 (LargeScientific coefficient0 exponent0)
   | coefficient0 == 0 = (# | 0## #)
-  | (coefficient,exponent) <- largeIncrementNegativeExp coefficient0 exponent0
-  , exponent >= 0, exponent < 3, coefficient >= 0, coefficient < 256
-  , r <- exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int exponent)
+  | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 3, coefficient >= 0, coefficient < 256
+  , r <- exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
   , y@(W8# y# ) <- fromIntegral @Int @Word8 r
   , fromIntegral @Word8 @Int y == r
     = (# | y# #)
@@ -204,9 +208,9 @@ largeToWord8 (LargeScientific coefficient0 exponent0)
 largeToWord16 :: LargeScientific -> (# (# #) | Word# #)
 largeToWord16 (LargeScientific coefficient0 exponent0)
   | coefficient0 == 0 = (# | 0## #)
-  | (coefficient,exponent) <- largeIncrementNegativeExp coefficient0 exponent0
-  , exponent >= 0, exponent < 5, coefficient >= 0, coefficient < 65536
-  , r <- exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int exponent)
+  | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 5, coefficient >= 0, coefficient < 65536
+  , r <- exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
   , y@(W16# y# ) <- fromIntegral @Int @Word16 r
   , fromIntegral @Word16 @Int y == r
     = (# | y# #)
@@ -220,7 +224,7 @@ exp10 !a !e = case e of
   _ -> exp10 (a * 10) (e - 1)
 
 largeNormalize :: LargeScientific -> LargeScientific
-largeNormalize s@(LargeScientific w e) = case w of
+largeNormalize s@(LargeScientific w _) = case w of
   0 -> LargeScientific 0 0
   _ -> largeNormalizeLoop s
 
@@ -294,6 +298,26 @@ parserUnsignedUtf8Bytes e = boxScientific (parserUnsignedUtf8Bytes# e)
 parserNegatedUtf8Bytes :: e -> Parser e s Scientific
 parserNegatedUtf8Bytes e = boxScientific (parserNegatedUtf8Bytes# e)
 
+parserTrailingUtf8Bytes# ::
+     e -- ^ Error message
+  -> Int# -- ^ Leading digit
+  -> Parser e s Scientific#
+{-# noinline parserTrailingUtf8Bytes# #-}
+parserTrailingUtf8Bytes# e leader =
+  mapIntPairToScientific (parseSmallTrailing# leader)
+  `orElseScientific`
+  upcastLargeScientific (parseLargeTrailing e (I# leader))
+
+parserNegatedTrailingUtf8Bytes# ::
+     e -- ^ Error message
+  -> Int# -- ^ Leading digit
+  -> Parser e s Scientific#
+{-# noinline parserNegatedTrailingUtf8Bytes# #-}
+parserNegatedTrailingUtf8Bytes# e leader =
+  mapNegateIntPairToScientific (parseSmallTrailing# leader)
+  `orElseScientific`
+  upcastNegatedLargeScientific (parseLargeTrailing e (I# leader))
+
 parserSignedUtf8Bytes# ::
      e -- ^ Error message
   -> Parser e s Scientific#
@@ -322,12 +346,19 @@ parserNegatedUtf8Bytes# e =
   `orElseScientific`
   upcastNegatedLargeScientific (parseLarge e)
 
--- parserTrailingUtf8Bytes ::
---      e -- ^ Error message
---   -> Int -- ^ Leading digit, should be between @-9@ and @9@.
---   -> Parser e s Scientific
--- parserTrailingUtf8Bytes e (I# leader) =
---   boxScientific (parserTrailingUtf8Bytes# leader e)
+parserTrailingUtf8Bytes ::
+     e -- ^ Error message
+  -> Int -- ^ Leading digit, should be between @-9@ and @9@.
+  -> Parser e s Scientific
+parserTrailingUtf8Bytes e (I# leader) =
+  boxScientific (parserTrailingUtf8Bytes# e leader)
+
+parserNegatedTrailingUtf8Bytes ::
+     e -- ^ Error message
+  -> Int -- ^ Leading digit, should be between @-9@ and @9@.
+  -> Parser e s Scientific
+parserNegatedTrailingUtf8Bytes e (I# leader) =
+  boxScientific (parserNegatedTrailingUtf8Bytes# e leader)
 -- 
 -- parserTrailingUtf8Bytes# ::
 --      e -- Error message
@@ -340,6 +371,16 @@ parserNegatedUtf8Bytes# e =
 parseLarge :: e -> Parser e s LargeScientific
 parseLarge e = do
   coeff <- Latin.decUnsignedInteger e
+  parseLargeCommon e coeff
+
+parseLargeTrailing :: e -> Int -> Parser e s LargeScientific
+parseLargeTrailing e !leader = do
+  coeff <- Latin.decTrailingInteger leader
+  parseLargeCommon e coeff
+
+parseLargeCommon :: e -> Integer -> Parser e s LargeScientific
+{-# noinline parseLargeCommon #-}
+parseLargeCommon e coeff = do
   Latin.trySatisfyThen (pure (LargeScientific coeff 0)) $ \c -> case c of
     '.' -> Just $ do
       !start <- Unsafe.cursor
@@ -347,7 +388,7 @@ parseLarge e = do
       !end <- Unsafe.cursor
       let !logDenom = end - start
           !coeffFinal = (integerTenExp coeff logDenom) + afterDot
-      Latin.trySatisfy (\c -> c == 'e' || c == 'E') >>= \case
+      Latin.trySatisfy (\ch -> ch == 'e' || ch == 'E') >>= \case
         True -> attemptLargeExp e coeffFinal (unI (Prelude.negate logDenom))
         False -> pure $! LargeScientific coeffFinal $! fromIntegral $! Prelude.negate logDenom
     'e' -> Just (attemptLargeExp e coeff 0# )
@@ -356,29 +397,38 @@ parseLarge e = do
 
 -- handles unsigned small numbers
 parseSmall# :: Parser () s (# Int#, Int# #)
-{-# noinline parseSmall# #-}
 parseSmall# =
   Latin.decUnsignedInt# () `Parser.bindFromIntToIntPair` \coeff# ->
+  parseSmallCommon# coeff#
+
+parseSmallTrailing# :: Int# -> Parser () s (# Int#, Int# #)
+parseSmallTrailing# leader =
+  Latin.decTrailingInt# () leader `Parser.bindFromIntToIntPair` \coeff# ->
+  parseSmallCommon# coeff#
+
+parseSmallCommon# :: Int# -> Parser () s (# Int#, Int# #)
+{-# noinline parseSmallCommon# #-}
+parseSmallCommon# coeff# =
   Latin.trySatisfyThen (Parser.pureIntPair (# coeff#, 0# #)) $ \c -> case c of
     '.' -> Just $
       Unsafe.cursor `Parser.bindFromLiftedToIntPair` \start ->
       Latin.decUnsignedInt# () `Parser.bindFromIntToIntPair` \afterDot# ->
       Unsafe.cursor `Parser.bindFromLiftedToIntPair` \end ->
       let !logDenom = end - start
-          goCoeff !coeffShifted !exponent = case exponent of
+          goCoeff !coeffShifted !expon = case expon of
             0 ->
               let !(I# coeffShifted# ) = coeffShifted
                   !(# coeffFinal, overflowed #) =
                     Exts.addIntC# coeffShifted# afterDot#
                in case overflowed of
-                0# -> Latin.trySatisfy (\c -> c == 'e' || c == 'E') `Parser.bindFromLiftedToIntPair` \b -> case b of
+                0# -> Latin.trySatisfy (\ch -> ch == 'e' || ch == 'E') `Parser.bindFromLiftedToIntPair` \b -> case b of
                   True -> attemptSmallExp coeffFinal (unI (Prelude.negate logDenom))
                   False -> Parser.pureIntPair (# coeffFinal, unI (Prelude.negate logDenom) #)
                 _ -> Parser.failIntPair ()
             _ ->
               let coeffShifted' = coeffShifted * 10
                in if coeffShifted' >= coeffShifted
-                    then goCoeff coeffShifted' (exponent - 1)
+                    then goCoeff coeffShifted' (expon - 1)
                     -- If we overflow, fail so that the parser
                     -- for large number will handle it instead.
                     else Parser.failIntPair ()
@@ -396,8 +446,8 @@ attemptLargeExp ::
   -> Parser e s LargeScientific
 {-# noinline attemptLargeExp #-}
 attemptLargeExp e signedCoeff !deltaExp# = do
-  exponent <- Latin.decSignedInteger e
-  let !exponent' = exponent + fromIntegral (I# deltaExp# )
+  expon <- Latin.decSignedInteger e
+  let !exponent' = expon + fromIntegral (I# deltaExp# )
   pure (LargeScientific signedCoeff exponent')
 
 -- The delta passed to this is only ever a negative integer.
@@ -414,14 +464,6 @@ attemptSmallExp !signedCoeff# !deltaExp# = Parser.unboxIntPair $ do
   signedCoeff = I# signedCoeff#
   deltaExp = I# deltaExp#
 
-unboxScientific :: Parser s e Scientific -> Parser s e Scientific#
-unboxScientific (Parser f) = Parser
-  (\x s0 -> case f x s0 of
-    (# s1, r #) -> case r of
-      (# e | #) -> (# s1, (# e | #) #)
-      (# | (# Scientific (I# x) (I# y) z, b, c #) #) -> (# s1, (# | (# (# x, y, z #), b, c #) #) #)
-  )
-
 -- | Convert a 'Word#' parser to a 'Word32' parser. Precondition:
 -- the argument parser only returns words less than 4294967296.
 boxScientific :: Parser s e Scientific# -> Parser s e Scientific
@@ -429,7 +471,7 @@ boxScientific (Parser f) = Parser
   (\x s0 -> case f x s0 of
     (# s1, r #) -> case r of
       (# e | #) -> (# s1, (# e | #) #)
-      (# | (# (# x, y, z #), b, c #) #) -> (# s1, (# | (# Scientific (I# x) (I# y) z, b, c #) #) #)
+      (# | (# (# w, y, z #), b, c #) #) -> (# s1, (# | (# Scientific (I# w) (I# y) z, b, c #) #) #)
   )
 
 unI :: Int -> Int#
@@ -485,7 +527,7 @@ upcastNegatedLargeScientific (Parser g) = Parser
   (\x s0 -> case g x s0 of
     (# s1, r #) -> case r of
       (# e | #) -> (# s1, (# e | #) #)
-      (# | (# LargeScientific x y, b, c #) #) -> (# s1, (# | (# (# 0#, unI minBound, LargeScientific (Prelude.negate x) y #), b, c #) #) #)
+      (# | (# LargeScientific w y, b, c #) #) -> (# s1, (# | (# (# 0#, unI minBound, LargeScientific (Prelude.negate w) y #), b, c #) #) #)
   )
 
 mapIntPairToScientific ::

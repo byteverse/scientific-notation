@@ -35,21 +35,21 @@ description:
   .
   * Parsing: The `scientific-notation` parser outperforms the `scientific`
     parser that ships with `aeson` by a factor of five on small numbers.
-homepage:            https://github.com/andrewthad/scientific-notation
--- bug-reports:
-license:             BSD-3-Clause
-license-file:        LICENSE
-author:              Andrew Martin
-maintainer:          andrew.thaddeus@gmail.com
--- copyright:
-category:            Data
-extra-source-files:  CHANGELOG.md
+homepage: https://github.com/andrewthad/scientific-notation
+bug-reports: https://github.com/andrewthad/scientific-notation/issues
+license: BSD-3-Clause
+license-file: LICENSE
+author: Andrew Martin
+maintainer: andrew.thaddeus@gmail.com
+copyright: 2019 Andrew Martin
+category: Data
+extra-source-files: CHANGELOG.md
 
 library
   exposed-modules: Data.Number.Scientific
   build-depends:
     , base >=4.12 && <5
-    , bytesmith >=0.1 && <0.2
+    , bytesmith >=0.2 && <0.3
   hs-source-dirs: src
   default-language: Haskell2010
 
