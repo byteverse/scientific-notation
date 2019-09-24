@@ -15,6 +15,7 @@ module Data.Number.Scientific
     -- * Consume
   , toWord8
   , toWord16
+  , toWord32
     -- * Decode
   , parserSignedUtf8Bytes
   , parserTrailingUtf8Bytes
@@ -31,7 +32,8 @@ module Data.Number.Scientific
 import Prelude hiding (negate)
 
 import GHC.Exts (Int#,Word#,Int(I#),(+#))
-import GHC.Word (Word8(W8#),Word16(W16#))
+import GHC.Word (Word(W#),Word8(W8#),Word16(W16#),Word32(W32#))
+import Data.Bits ((.&.))
 import Data.Bytes.Parser (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
 
@@ -134,6 +136,12 @@ toWord16 (Scientific (I# coeff) (I# e) largeNum) = case toWord16# coeff e largeN
   (# (# #) | #) -> Nothing
   (# | w #) -> Just (W16# w)
 
+toWord32 :: Scientific -> Maybe Word32
+{-# inline toWord32 #-}
+toWord32 (Scientific (I# coeff) (I# e) largeNum) = case toWord32# coeff e largeNum of
+  (# (# #) | #) -> Nothing
+  (# | w #) -> Just (W32# w)
+
 toSmallHelper ::
      (Int -> Int -> (# (# #) | Word# #) ) -- small
   -> (LargeScientific -> (# (# #) | Word# #) ) -- large
@@ -162,8 +170,25 @@ toWord16# coefficient0# exponent0# largeNum =
   toSmallHelper smallToWord16 largeToWord16
     coefficient0# exponent0# largeNum
 
+toWord32# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
+{-# noinline toWord32# #-}
+toWord32# coefficient0# exponent0# largeNum =
+  toSmallHelper smallToWord32 largeToWord32
+    coefficient0# exponent0# largeNum
+
+-- Arguments are non-normalized coefficient and exponent.
+-- We cannot use the same trick that we use for Word8 and
+-- Word16.
+smallToWord32 :: Int -> Int -> (# (# #) | Word# #)
+smallToWord32 !coefficient0 !exponent0
+  | coefficient0 == 0 = (# | 0## #)
+  | (coefficient,expon) <- incrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 10, coefficient >= 0, coefficient <= 0xFFFFFFFF
+    = word32Exp10 (fromIntegral @Int @Word coefficient) expon
+  | otherwise = (# (# #) | #)
+
 -- Arguments are non-normalized coefficient and exponent
--- With Word8, we can do a neat little trick where we
+-- With Word16, we can do a neat little trick where we
 -- cap the coefficient at 65536 and the exponent at 5. This
 -- works because a 32-bit signed int can contain 65535e4.
 smallToWord16 :: Int -> Int -> (# (# #) | Word# #)
@@ -216,6 +241,26 @@ largeToWord16 (LargeScientific coefficient0 exponent0)
     = (# | y# #)
   | otherwise = (# (# #) | #)
 
+-- Arguments are non-normalized
+largeToWord32 :: LargeScientific -> (# (# #) | Word# #)
+largeToWord32 (LargeScientific coefficient0 exponent0)
+  | coefficient0 == 0 = (# | 0## #)
+  | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent0
+  , expon >= 0, expon < 10, coefficient >= 0, coefficient <= 0xFFFFFFFF
+  , r <- exp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
+  , y@(W32# y# ) <- fromIntegral @Int @Word32 r
+  , fromIntegral @Word32 @Int y == r
+    = (# | y# #)
+  | otherwise = (# (# #) | #)
+
+-- Precondition: the exponent is non-negative. This returns
+-- an unboxed Nothing on overflow.
+word32Exp10 :: Word -> Int -> (# (# #) | Word# #)
+word32Exp10 !a@(W# a# ) !e = case e of
+  0 -> (# | a# #)
+  _ -> let a' = 0xFFFFFFFF .&. (a * 10) in if a' >= a
+    then word32Exp10 a' (e - 1)
+    else (# (# #) | #)
 
 -- Precondition: the exponent is non-negative
 exp10 :: Int -> Int -> Int

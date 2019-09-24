@@ -9,7 +9,7 @@ import Data.Bool (bool)
 import Data.Bytes.Types (Bytes(Bytes))
 import Data.Char (ord)
 import Data.Primitive (ByteArray)
-import Data.Number.Scientific (large,small,toWord8,toWord16)
+import Data.Number.Scientific (large,small,toWord8,toWord16,toWord32)
 import Data.Word (Word8)
 import Test.Tasty (defaultMain,testGroup,TestTree)
 import Test.Tasty.HUnit ((@=?),assertFailure)
@@ -60,6 +60,18 @@ tests = testGroup "Tests"
     , THU.testCase "F" $ Just 0 @=? toWord16 (small 0 999999999)
     , THU.testCase "G" $ Nothing @=? toWord16 (small (-1) 1)
     , THU.testCase "H" $ Nothing @=? toWord16 (small 65536 0)
+    ]
+  , testGroup "Word32"
+    [ THU.testCase "A" $ Just 30 @=? toWord16 (small 300 (-1))
+    , THU.testCase "B" $ Just 300 @=? toWord16 (small 300 0)
+    , THU.testCase "C" $ Nothing @=? toWord16 (small 1 999999999)
+    , THU.testCase "D" $ Just 65535 @=? toWord16 (large 65535e40 (-40))
+    , THU.testCase "E" $ Just 0 @=? toWord16 (large 0 10e30)
+    , THU.testCase "F" $ Just 0 @=? toWord16 (small 0 999999999)
+    , THU.testCase "G" $ Nothing @=? toWord16 (small (-1) 1)
+    , THU.testCase "H" $ Nothing @=? toWord16 (small 4294967296 0)
+    , THU.testCase "I" $ Just 4294967295 @=? toWord32 (large 4294967295e40 (-40))
+    , THU.testCase "J" $ Just 4294967295 @=? toWord32 (small 4294967295 0)
     ]
   , testGroup "Parser"
     [ testGroup "UTF-8-unsigned"
