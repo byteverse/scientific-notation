@@ -131,29 +131,29 @@ tests = testGroup "Tests"
   , testGroup "Parser"
     [ testGroup "UTF-8-signed"
       [ testProperty "small-integer" $ \i ->
-          P.Success (small i 0) 0
+          let str = show i in
+          P.Success (P.Slice (length str + 1) 0 (small i 0))
           ===
-          P.parseBytes (SCI.parserSignedUtf8Bytes ())
-            (bytes (show i))
+          P.parseBytes (SCI.parserSignedUtf8Bytes ()) (bytes str)
       , testProperty "small-exp" $ \i j b ->
-          P.Success (small i j) 0
+          let str = show i ++ bool "e" "E" b ++ show j in
+          P.Success (P.Slice (length str + 1) 0 (small i j))
           ===
-          P.parseBytes (SCI.parserSignedUtf8Bytes ())
-            (bytes (show i ++ bool "e" "E" b ++ show j))
+          P.parseBytes (SCI.parserSignedUtf8Bytes ()) (bytes str)
       , testProperty "fixed-e12-no-exp" $ \(i :: Fixed E12) ->
-          QC.counterexample (show i)
+          let str = show i in
+          QC.counterexample str
           $
-          P.Success (SCI.fromFixed i) 0
+          P.Success (P.Slice (length str + 1) 0 (SCI.fromFixed i))
           ===
-          P.parseBytes (SCI.parserSignedUtf8Bytes ())
-            (bytes (show i))
+          P.parseBytes (SCI.parserSignedUtf8Bytes ()) (bytes str)
       , testProperty "large-integer" $ \(LargeInteger i) (LargeInteger j) ->
-          QC.counterexample (show (large i j))
+          let str = show (large i j) in
+          QC.counterexample str
           $
-          P.Success (large i j) 0
+          P.Success (P.Slice (length str + 1) 0 (large i j))
           ===
-          P.parseBytes (SCI.parserSignedUtf8Bytes ())
-            (bytes (show (large i j)))
+          P.parseBytes (SCI.parserSignedUtf8Bytes ()) (bytes str)
       ]
     ]
   ]
