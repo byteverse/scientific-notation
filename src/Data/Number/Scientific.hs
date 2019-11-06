@@ -21,6 +21,7 @@ module Data.Number.Scientific
   , toInt
   , toInt32
   , toInt64
+  , withExposed
     -- * Decode
   , parserSignedUtf8Bytes
   , parserTrailingUtf8Bytes
@@ -176,6 +177,19 @@ toInt64 :: Scientific -> Maybe Int64
 toInt64 (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum of
   (# (# #) | #) -> Nothing
   (# | i #) -> Just (I64# i)
+
+-- | Expose the non-normalized exponent and coefficient.
+withExposed ::
+     (Int -> Int -> a)
+     -- ^ Called when coefficient and exponent are small
+  -> (Integer -> Integer -> a)
+     -- ^ Called when coefficient and exponent are large
+  -> Scientific
+  -> a
+withExposed f g (Scientific coeff theExp big) = if theExp /= minBound
+  then f coeff theExp
+  else case big of
+    LargeScientific coeff' theExp' -> g coeff' theExp'
 
 toSmallHelper ::
      (Int -> Int -> (# (# #) | Word# #) ) -- small

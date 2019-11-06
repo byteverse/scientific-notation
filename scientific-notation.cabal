@@ -1,6 +1,6 @@
 cabal-version: 2.2
 name: scientific-notation
-version: 0.1.0.1
+version: 0.1.1.0
 synopsis: Scientific notation intended for tokenization
 description:
   This library provides a type used to represent a number in
@@ -51,6 +51,7 @@ library
     , base >=4.12 && <5
     , bytesmith >=0.3 && <0.4
   hs-source-dirs: src
+  ghc-options: -O2 -Wall
   default-language: Haskell2010
 
 test-suite test
