@@ -33,6 +33,8 @@ module Data.Number.Scientific
   , parserUnsignedUtf8Bytes#
   , parserNegatedUtf8Bytes#
   , parserNegatedTrailingUtf8Bytes#
+    -- * Encode
+  , builderUtf8
   ) where
 
 import Prelude hiding (negate)
@@ -40,10 +42,14 @@ import Prelude hiding (negate)
 import GHC.Exts (Int#,Word#,Int(I#),(+#))
 import GHC.Word (Word(W#),Word8(W8#),Word16(W16#),Word32(W32#),Word64(W64#))
 import GHC.Int (Int64(I64#),Int32(I32#))
+import Data.Bytes.Builder (Builder)
 import Data.Bytes.Parser.Unsafe (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
 
+import qualified Arithmetic.Nat as Nat
 import qualified Data.Fixed as Fixed
+import qualified Data.Bytes.Builder as Builder
+import qualified Data.Bytes.Builder.Bounded as BB
 import qualified Data.Bytes.Parser as Parser
 import qualified Data.Bytes.Parser.Latin as Latin
 import qualified Data.Bytes.Parser.Unsafe as Unsafe
@@ -848,3 +854,19 @@ bindToScientific (Parser f) g = Parser
       (# | (# y, b, c #) #) ->
         runParser (g y) (# arr, b, c #) s1
   )
+
+builderUtf8 :: Scientific -> Builder
+builderUtf8 (Scientific coeff e big)
+  | e == 0 = Builder.intDec coeff
+  | e == minBound = let LargeScientific coeff' e' = big in
+      Builder.integerDec coeff'
+      <>
+      Builder.ascii 'e'
+      <>
+      Builder.integerDec e'
+  | otherwise = Builder.fromBounded Nat.constant $
+      BB.intDec coeff
+      `BB.append`
+      BB.ascii 'e'
+      `BB.append`
+      BB.intDec e
