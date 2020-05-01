@@ -1,5 +1,9 @@
 # Revision history for scientific-notation
 
+## 0.1.2.0 -- 2020-05-01
+
+* Add `builderUtf8`.
+
 ## 0.1.1.0 -- 2019-11-06
 
 * Add `withExposed`.
