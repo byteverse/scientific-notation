@@ -128,6 +128,34 @@ tests = testGroup "Tests"
     , THU.testCase "U" $ Just (-9.3e17) @=? toInt64 (small (-93) 16)
     , THU.testCase "V" $ Nothing @=? toInt64 (large 922337203685477581 1)
     ]
+  , testGroup "Compare"
+    [ THU.testCase "A" $ SCI.greaterThanInt64 (small 300 (-2)) 2 @=? True
+    , THU.testCase "B" $ SCI.greaterThanInt64 (small 300 (-2)) 3 @=? False
+    , THU.testCase "C" $ SCI.greaterThanInt64 (small 300 (-2)) 4 @=? False
+    , THU.testCase "D" $ SCI.greaterThanInt64 (small (-300) (-2)) (-2) @=? False
+    , THU.testCase "E" $ SCI.greaterThanInt64 (small (-300) (-2)) (-3) @=? False
+    , THU.testCase "F" $ SCI.greaterThanInt64 (small (-300) (-2)) (-4) @=? True
+    , THU.testCase "G" $ SCI.greaterThanInt64 (small (-300) (-2)) 5 @=? False
+    , THU.testCase "H" $ SCI.greaterThanInt64 (small 300 (-2)) (-5) @=? True
+    , THU.testCase "I" $ SCI.greaterThanInt64 (small 300 (-2)) 0 @=? True
+    , THU.testCase "J" $ SCI.greaterThanInt64 (small 3 0) 0 @=? True
+    , THU.testCase "K" $ SCI.greaterThanInt64 (small 0 0) 0 @=? False
+    , THU.testCase "L" $ SCI.greaterThanInt64 (small 0 10) 0 @=? False
+    , THU.testCase "M" $ SCI.greaterThanInt64 (small 1 100) 20 @=? True
+    , THU.testCase "N" $ SCI.greaterThanInt64 (small (-5) 100) (-20) @=? False
+    , THU.testCase "O" $ SCI.greaterThanInt64 (small (-5) (-100)) (-1) @=? True
+    , THU.testCase "P" $ SCI.greaterThanInt64 (small 42 (-2)) 1 @=? False
+    , THU.testCase "Q" $ SCI.greaterThanInt64 (small 42 (-1)) 1 @=? True
+    , THU.testCase "R" $ SCI.greaterThanInt64 (large 5430747472779717375525059 0) 1 @=? True
+    , THU.testCase "S" $ SCI.greaterThanInt64 (large 5430747472779717375525059 (-100)) 1 @=? False
+    , THU.testCase "T" $ SCI.greaterThanInt64 (large (-5430747472779717375525059) 0) 1 @=? False
+    , THU.testCase "U" $ SCI.greaterThanInt64 (large (-5430747472779717375525059) (-100)) (-1) @=? True
+    , THU.testCase "V" $ SCI.greaterThanInt64 (large (-5430747472779717375525059) (-100)) 0 @=? False
+    , THU.testCase "W" $ SCI.greaterThanInt64 (large (4e30) (-30)) 4 @=? False
+    , THU.testCase "X" $ SCI.greaterThanInt64 (large (4e30) (-30)) 3 @=? True
+    , THU.testCase "Y" $ SCI.greaterThanInt64 (large (-4e30) (-30)) (-4) @=? False
+    , THU.testCase "Z" $ SCI.greaterThanInt64 (large (-4e30) (-30)) (-5) @=? True
+    ]
   , testGroup "Parser"
     [ testGroup "UTF-8-signed"
       [ testProperty "small-integer" $ \i ->

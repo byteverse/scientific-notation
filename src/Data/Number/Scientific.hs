@@ -22,6 +22,8 @@ module Data.Number.Scientific
   , toInt32
   , toInt64
   , withExposed
+    -- * Compare
+  , greaterThanInt64
     -- * Decode
   , parserSignedUtf8Bytes
   , parserTrailingUtf8Bytes
@@ -87,8 +89,14 @@ instance Eq Scientific where
         (LargeScientific (fromIntegral coeffA) (fromIntegral eB))
     | otherwise = eqSmall coeffA eA coeffB eB
 
-data LargeScientific = LargeScientific !Integer !Integer
+data LargeScientific = LargeScientific
+  !Integer -- coefficent
+  !Integer -- exponent
 
+-- Padding just needs to be any number larger than the number of decimal
+-- digits that could represent a 64-bit integer. Normalization of scientific
+-- numbers using the small representation is only sound when we know that we
+-- are not going to trigger an overflow.
 padding :: Int
 padding = 50
 
@@ -184,6 +192,53 @@ toInt64 (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum o
   (# (# #) | #) -> Nothing
   (# | i #) -> Just (I64# i)
 
+-- | Is the number represented in scientific notation greater than the
+-- 64-bit integer argument?
+greaterThanInt64 :: Scientific -> Int64 -> Bool
+greaterThanInt64 (Scientific coeff0@(I# coeff0# ) e0 large0) tgt@(I64# tgt# )
+  | e0 == minBound = largeGreaterThanInt64 large0 tgt
+  | coeff0 == 0 = 0 > tgt
+  | e0 == 0 = I64# coeff0# > tgt
+  | coeff0 > 0 =
+      if | tgt <= 0 -> True
+         | e0 > 0 -> case smallToInt coeff0 e0 of
+             (# (# #) | #) -> True
+             (# | i# #) -> I64# i# > tgt
+           -- In last case, e0 is less than zero.
+         | otherwise -> case posIntExp10 (I# tgt#) (Prelude.negate e0) of
+             (# (# #) | #) -> False
+             (# | i# #) -> I64# coeff0# > I64# i#
+  | otherwise = -- Coefficent is negative
+      if | tgt >= 0 -> False
+         | e0 > 0 -> case smallToInt coeff0 e0 of
+             (# (# #) | #) -> False
+             (# | i# #) -> I64# i# > tgt
+           -- In last case, e0 is less than zero.
+         | otherwise -> case negIntExp10 (I# tgt#) (Prelude.negate e0) of
+             (# (# #) | #) -> True
+             (# | i# #) -> I64# coeff0# > I64# i#
+
+largeGreaterThanInt64 :: LargeScientific -> Int64 -> Bool
+largeGreaterThanInt64 large0@(LargeScientific coeff e) !tgt
+  | coeff == 0 = 0 > tgt
+  | e == 0 = coeff > fromIntegral @Int64 @Integer tgt
+  | coeff > 0 =
+      if | tgt <= 0 -> True
+         | e > 0 -> case largeToInt large0 of
+             (# (# #) | #) -> True
+             (# | i# #) -> I64# i# > tgt
+         | otherwise -> case posSciLowerBound False coeff e of
+             Exactly n -> n > fromIntegral @Int64 @Integer tgt
+             LowerBoundedMagnitude n -> (n+1) > fromIntegral @Int64 @Integer tgt
+  | otherwise = -- Coefficent is negative
+      if | tgt >= 0 -> False
+         | e > 0 -> case largeToInt large0 of
+             (# (# #) | #) -> False
+             (# | i# #) -> I64# i# > tgt
+         | otherwise -> case posSciLowerBound False coeff e of
+             Exactly n -> n > fromIntegral @Int64 @Integer tgt
+             LowerBoundedMagnitude n -> n > fromIntegral @Int64 @Integer tgt
+             
 -- | Expose the non-normalized exponent and coefficient.
 withExposed ::
      (Int -> Int -> a)
@@ -792,6 +847,24 @@ integerTenExp !r !e = case e of
   7 -> r * 10000000
   8 -> r * 100000000
   _ -> integerTenExp (r * 1000000000) (e - 9)
+
+data Estimate
+  = Exactly !Integer
+  | LowerBoundedMagnitude !Integer
+    -- For positive N, LowerBoundedMagnitude N means that x > N and x < N+1.
+    -- For negative N, LowerBoundedMagnitude N means that x < N and x > N-1.
+
+-- Precondition: Exponent is non-positive. Coefficient is non-zero.
+-- When calling this from elsewhere, set wasTruncated to False.
+posSciLowerBound :: Bool -> Integer -> Integer -> Estimate
+posSciLowerBound !wasTruncated !coeff !e
+  | e == 0 = case wasTruncated of
+      True -> LowerBoundedMagnitude coeff
+      False -> Exactly coeff
+  | otherwise = let (q,r) = quotRem coeff 10 in
+      case q of
+        0 -> LowerBoundedMagnitude 0
+        _ -> posSciLowerBound (wasTruncated || r /= 0) q (e + 1)
 
 -- This only works if the number is a power of ten.
 -- It is only intended to be used by fromFixed.

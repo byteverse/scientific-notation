@@ -1,5 +1,9 @@
 # Revision history for scientific-notation
 
+## 0.1.3.0 -- 2020-??-??
+
+* Add `greaterThanInt64`.
+
 ## 0.1.2.0 -- 2020-05-01
 
 * Add `builderUtf8`.
