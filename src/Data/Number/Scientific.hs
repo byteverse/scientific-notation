@@ -12,6 +12,7 @@ module Data.Number.Scientific
   , small
   , large
   , fromFixed
+  , fromWord64
     -- * Consume
   , toWord
   , toWord8
@@ -191,6 +192,14 @@ toInt64 :: Scientific -> Maybe Int64
 toInt64 (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum of
   (# (# #) | #) -> Nothing
   (# | i #) -> Just (I64# i)
+
+-- | Convert a 64-bit unsigned word to a 'Scientific'.
+fromWord64 :: Word64 -> Scientific
+fromWord64 !w = if w <= 9223372036854775807
+  then Scientific (fromIntegral w) 0 zeroLarge
+  else
+    let !b = LargeScientific (fromIntegral w) 0
+     in Scientific 0 minBound b
 
 -- | Is the number represented in scientific notation greater than the
 -- 64-bit integer argument?
@@ -932,11 +941,14 @@ builderUtf8 :: Scientific -> Builder
 builderUtf8 (Scientific coeff e big)
   | e == 0 = Builder.intDec coeff
   | e == minBound = let LargeScientific coeff' e' = big in
-      Builder.integerDec coeff'
-      <>
-      Builder.ascii 'e'
-      <>
-      Builder.integerDec e'
+      case e' of
+        0 -> Builder.integerDec coeff'
+        _ -> 
+          Builder.integerDec coeff'
+          <>
+          Builder.ascii 'e'
+          <>
+          Builder.integerDec e'
   | otherwise = Builder.fromBounded Nat.constant $
       BB.intDec coeff
       `BB.append`

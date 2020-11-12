@@ -3,6 +3,8 @@
 ## 0.1.3.0 -- 2020-??-??
 
 * Add `greaterThanInt64`.
+* Add `fromWord64`.
+* Suppress zero exponent when encoding.
 
 ## 0.1.2.0 -- 2020-05-01
 
