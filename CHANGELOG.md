@@ -1,6 +1,6 @@
 # Revision history for scientific-notation
 
-## 0.1.3.0 -- 2020-??-??
+## 0.1.3.0 -- 2021-02-23
 
 * Add `greaterThanInt64`.
 * Add `fromWord64`.
