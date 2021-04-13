@@ -12,6 +12,9 @@ module Data.Number.Scientific
   , small
   , large
   , fromFixed
+  , fromWord8
+  , fromWord16
+  , fromWord32
   , fromWord64
     -- * Consume
   , toWord
@@ -200,6 +203,21 @@ fromWord64 !w = if w <= 9223372036854775807
   else
     let !b = LargeScientific (fromIntegral w) 0
      in Scientific 0 minBound b
+
+-- | Convert an 8-bit unsigned word to a 'Scientific'.
+fromWord8 :: Word8 -> Scientific
+{-# inline fromWord8 #-}
+fromWord8 !w = Scientific (fromIntegral w) 0 zeroLarge
+
+-- | Convert a 16-bit unsigned word to a 'Scientific'.
+fromWord16 :: Word16 -> Scientific
+{-# inline fromWord16 #-}
+fromWord16 !w = Scientific (fromIntegral w) 0 zeroLarge
+
+-- | Convert a 32-bit unsigned word to a 'Scientific'.
+fromWord32 :: Word32 -> Scientific
+{-# inline fromWord32 #-}
+fromWord32 !w = Scientific (fromIntegral w) 0 zeroLarge
 
 -- | Is the number represented in scientific notation greater than the
 -- 64-bit integer argument?
