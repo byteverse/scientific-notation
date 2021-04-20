@@ -1,5 +1,6 @@
 {-# language BangPatterns #-}
 {-# language LambdaCase #-}
+{-# language NumericUnderscores #-}
 {-# language TypeApplications #-}
 {-# language MultiWayIf #-}
 {-# language MagicHash #-}
@@ -26,6 +27,8 @@ module Data.Number.Scientific
   , toInt32
   , toInt64
   , withExposed
+    -- * Scale and Consume
+  , roundShiftedToInt64
     -- * Compare
   , greaterThanInt64
     -- * Decode
@@ -196,6 +199,23 @@ toInt64 (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum o
   (# (# #) | #) -> Nothing
   (# | i #) -> Just (I64# i)
 
+-- | This works even if the number has a fractional component. For example:
+--
+-- >>> roundShiftedToInt64 2 (fromFixed @E3 1.037)
+-- 103
+--
+-- The shift amount should be a small constant between -100 and 100.
+-- The behavior of a shift outside this range is undefined.
+roundShiftedToInt64 ::
+     Int -- ^ Exponent @e@, @n@ is multiplied by @10^e@ before rounding
+  -> Scientific -- ^ Number @n@
+  -> Maybe Int64
+{-# inline roundShiftedToInt64 #-}
+roundShiftedToInt64 (I# adj) (Scientific (I# coeff) (I# e) largeNum) =
+  case roundToInt# coeff e adj largeNum of
+     (# (# #) | #) -> Nothing
+     (# | i #) -> Just (I64# i)
+
 -- | Convert a 64-bit unsigned word to a 'Scientific'.
 fromWord64 :: Word64 -> Scientific
 fromWord64 !w = if w <= 9223372036854775807
@@ -348,6 +368,24 @@ toInt# coefficient0# exponent0# largeNum =
   toSmallIntHelper smallToInt largeToInt
     coefficient0# exponent0# largeNum
 
+roundToInt# :: Int# -> Int# -> Int# -> LargeScientific -> (# (# #) | Int# #)
+{-# noinline roundToInt# #-}
+roundToInt# coefficient0# exponent0# adjustment0# largeNum =
+  if exponent0 /= minBound
+    then
+      if | coefficient0 == 0 -> (# | 0# #)
+         | exponent0 > (maxBound - 200) -> (# (# #) | #)
+         | exponent0 < (minBound + 200) -> (# (# #) | #)
+         | adjustment0 > 100 -> (# (# #) | #)
+         | adjustment0 < (-100) -> (# (# #) | #)
+         | otherwise ->
+             roundSmallToInt coefficient0 (I# (exponent0# +# adjustment0#))
+    else roundLargeToInt adjustment0 largeNum
+  where
+  coefficient0 = I# coefficient0#
+  exponent0 = I# exponent0#
+  adjustment0 = I# adjustment0#
+
 -- Arguments are non-normalized coefficient and exponent.
 -- We cannot use the same trick that we use for Word8 and
 -- Word16.
@@ -392,6 +430,24 @@ smallToInt !coefficient0 !exponent0
     = if coefficient >= 0
         then posIntExp10 coefficient expon
         else negIntExp10 coefficient expon
+  | otherwise = (# (# #) | #)
+
+-- Arguments are non-normalized coefficient and exponent.
+-- This is similar to smallToInt except that we round numbers with fractional
+-- parts. And by round, I actually mean truncate. Fractional parts only show
+-- up when the exponent is negative.
+roundSmallToInt :: Int -> Int -> (# (# #) | Int# #)
+roundSmallToInt !coefficient0 !exponent0
+  | coefficient0 == 0 = (# | 0# #)
+  | (coefficient@(I# coefficient# ),expon) <- incrementNegativeExp coefficient0 exponent0
+  , expon < 30 = case compare expon 0 of
+      EQ -> (# | coefficient# #)
+      GT -> if coefficient >= 0
+        then posIntExp10 coefficient expon
+        else negIntExp10 coefficient expon
+      LT -> if coefficient >= 0
+        then (# | roundPosIntNegExp10 coefficient expon #)
+        else (# | roundNegIntNegExp10 coefficient expon #)
   | otherwise = (# (# #) | #)
 
 -- Arguments are non-normalized coefficient and exponent
@@ -492,6 +548,33 @@ largeToInt (LargeScientific coefficient0 exponent0)
         else negIntExp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
   | otherwise = (# (# #) | #)
 
+-- Arguments are non-normalized, this targets the native word size
+roundLargeToInt :: Int -> LargeScientific -> (# (# #) | Int# #)
+roundLargeToInt !adj (LargeScientific coefficient0 exponent0)
+  | coefficient0 == 0 = (# | 0# #)
+  | (coefficient,expon) <- largeIncrementNegativeExp coefficient0 exponent1
+  , expon < 30
+    = case compare expon 0 of
+        EQ -> case fromIntegral @Integer @Int coefficient of
+          I# r -> (# | r #)
+        GT ->
+          if coefficient >= (fromIntegral @Int @Integer minBound) && coefficient <= (fromIntegral @Int @Integer maxBound)
+            then if coefficient >= 0
+              then posIntExp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
+              else negIntExp10 (fromIntegral @Integer @Int coefficient) (fromIntegral @Integer @Int expon)
+            else (# (# #) | #)
+        LT -> if expon < (-100_000_000_000)
+          then -- Due to the realities of hardward, a negative exponent with high
+               -- magnitude is guaranteed to produce a zero result. A coefficient
+               -- large enough to resist the zero result would consume all memory.
+               (# | 0# #)
+          else if coefficient >= 0
+            then roundPosIntegerNegExp10 coefficient (fromInteger expon)
+            else roundNegIntegerNegExp10 coefficient (fromInteger expon)
+  | otherwise = (# (# #) | #)
+  where
+  exponent1 = exponent0 + toInteger adj
+
 -- Precondition: the exponent is non-negative. This returns
 -- an unboxed Nothing on overflow. This implementation should
 -- work even on a 32-bit platform.
@@ -551,6 +634,27 @@ posIntExp10 !a@(I# a# ) !e = case e of
         else (# (# #) | #)
     else (# (# #) | #)
 
+-- Precondition: The exponent is non-positive, and the
+-- coefficient is non-negative. This returns an unboxed
+-- Nothing on overflow.
+roundPosIntNegExp10 :: Int -> Int -> Int#
+roundPosIntNegExp10 !a@(I# a# ) !e = case e of
+  0 -> a#
+  _ -> roundPosIntNegExp10 (quot a 10) (e + 1)
+
+-- Precondition: The exponent is non-positive, and the
+-- coefficient is non-negative. This returns an unboxed
+-- Nothing on overflow.
+roundPosIntegerNegExp10 :: Integer -> Int -> (# (# #) | Int# #)
+roundPosIntegerNegExp10 !a !e = case e of
+  0 -> if a > fromIntegral @Int @Integer maxBound
+    then (# (# #) | #)
+    else case fromInteger a of
+      I# a# -> (# | a# #)
+  _ -> case a of
+    0 -> (# | 0# #)
+    _ -> roundPosIntegerNegExp10 (quot a 10) (e + 1)
+
 -- Precondition: The exponent is non-negative, and the
 -- coefficient is non-positive. This returns an unboxed
 -- Nothing on overflow.
@@ -563,6 +667,27 @@ negIntExp10 !a@(I# a# ) !e = case e of
         then negIntExp10 a' (e - 1)
         else (# (# #) | #)
     else (# (# #) | #)
+
+-- Precondition: The exponent is non-position, and the
+-- coefficient is non-positive. This returns an unboxed
+-- Nothing on overflow.
+roundNegIntNegExp10 :: Int -> Int -> Int#
+roundNegIntNegExp10 !a@(I# a# ) !e = case e of
+  0 -> a#
+  _ -> roundNegIntNegExp10 (quot a 10) (e + 1)
+
+-- Precondition: The exponent is non-position, and the
+-- coefficient is non-positive. This returns an unboxed
+-- Nothing on overflow.
+roundNegIntegerNegExp10 :: Integer -> Int -> (# (# #) | Int# #)
+roundNegIntegerNegExp10 !a !e = case e of
+  0 -> if a > fromIntegral @Int @Integer maxBound
+    then (# (# #) | #)
+    else case fromInteger a of
+      I# a# -> (# | a# #)
+  _ -> case a of
+    0 -> (# | 0# #)
+    _ -> roundNegIntegerNegExp10 (quot a 10) (e + 1)
 
 -- What are these lower and upper bounds? The problem that
 -- we are trying to solve is that overflow is tricky to detect
@@ -628,6 +753,7 @@ incrementNegativeExp (I# w) (I# e) = case incrementNegativeExp# w e of
 
 -- If the exponent is negative, increase it as long as the
 -- coefficient divides ten evenly.
+-- This only ever causes the coefficient to decrease, never increase.
 incrementNegativeExp# :: Int# -> Int# -> (# Int#, Int# #)
 {-# noinline incrementNegativeExp# #-}
 incrementNegativeExp# w# e# = if I# e# >= 0

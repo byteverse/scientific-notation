@@ -1,4 +1,5 @@
 {-# language BangPatterns #-}
+{-# language NumericUnderscores #-}
 {-# language ScopedTypeVariables #-}
 {-# language TypeApplications #-}
 {-# language OverloadedStrings #-}
@@ -11,7 +12,7 @@ import Data.Char (ord)
 import Data.Fixed (Fixed,E12)
 import Data.Int (Int64)
 import Data.Number.Scientific (large,small,toWord8,toWord16,toWord32,toWord64)
-import Data.Number.Scientific (toInt64,toInt32)
+import Data.Number.Scientific (toInt64,toInt32,roundShiftedToInt64)
 import Data.Primitive (ByteArray)
 import Data.Word (Word8)
 import Test.Tasty (defaultMain,testGroup,TestTree)
@@ -127,6 +128,14 @@ tests = testGroup "Tests"
     , THU.testCase "T" $ Nothing @=? toInt64 (large 93 17)
     , THU.testCase "U" $ Just (-9.3e17) @=? toInt64 (small (-93) 16)
     , THU.testCase "V" $ Nothing @=? toInt64 (large 922337203685477581 1)
+    , THU.testCase "W" $ Just 12 @=? roundShiftedToInt64 1 (small 129 (-2))
+    , THU.testCase "X" $ Just (-12) @=? roundShiftedToInt64 1 (small (-129) (-2))
+    , THU.testCase "Y" $ Nothing @=? roundShiftedToInt64 31 (small 129 (-2))
+    , THU.testCase "Z" $ Just (1.29e18) @=? roundShiftedToInt64 18 (small 129 (-2))
+    , THU.testCase "AA" $ Just 9223372 @=? roundShiftedToInt64 (-26) (large 9223372036854775817425364203 5)
+    , THU.testCase "AB" $ Just (-9223372) @=? roundShiftedToInt64 (-26) (large (-9223372036854775817425364203) 5)
+    , THU.testCase "AC" $ Just 0 @=? roundShiftedToInt64 0 (large (-9223372036854775817425364203) (-1_000_000_000))
+    , THU.testCase "AD" $ Just 0 @=? roundShiftedToInt64 0 (large (50000000000000000000000000000) (-1_000_000_000))
     ]
   , testGroup "Compare"
     [ THU.testCase "A" $ SCI.greaterThanInt64 (small 300 (-2)) 2 @=? True

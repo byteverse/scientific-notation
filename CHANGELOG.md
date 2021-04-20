@@ -3,6 +3,7 @@
 ## 0.1.4.0 -- 2021-??-??
 
 * Add `fromWord8`, `fromWord16`, and `fromWord32`.
+* Add `roundShiftedToInt64`.
 
 ## 0.1.3.0 -- 2021-02-23
 
