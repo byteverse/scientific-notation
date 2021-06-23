@@ -136,6 +136,8 @@ tests = testGroup "Tests"
     , THU.testCase "AB" $ Just (-9223372) @=? roundShiftedToInt64 (-26) (large (-9223372036854775817425364203) 5)
     , THU.testCase "AC" $ Just 0 @=? roundShiftedToInt64 0 (large (-9223372036854775817425364203) (-1_000_000_000))
     , THU.testCase "AD" $ Just 0 @=? roundShiftedToInt64 0 (large (50000000000000000000000000000) (-1_000_000_000))
+    , THU.testCase "AE" $ Just 2 @=? toInt64 (small 2 0)
+    , THU.testCase "AF" $ Just 2 @=? toInt64 (large 2 0)
     ]
   , testGroup "Compare"
     [ THU.testCase "A" $ SCI.greaterThanInt64 (small 300 (-2)) 2 @=? True
