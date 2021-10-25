@@ -1,4 +1,5 @@
 {-# language BangPatterns #-}
+{-# language DuplicateRecordFields #-}
 {-# language LambdaCase #-}
 {-# language NumericUnderscores #-}
 {-# language TypeApplications #-}
@@ -43,25 +44,37 @@ module Data.Number.Scientific
   , parserNegatedUtf8Bytes#
   , parserNegatedTrailingUtf8Bytes#
     -- * Encode
+  , encode
   , builderUtf8
   ) where
 
 import Prelude hiding (negate)
 
+import Control.Monad.ST (runST)
 import GHC.Exts (Int#,Word#,Int(I#),(+#))
 import GHC.Word (Word(W#),Word8(W8#),Word16(W16#),Word32(W32#),Word64(W64#))
 import GHC.Int (Int64(I64#),Int32(I32#))
 import Data.Bytes.Builder (Builder)
 import Data.Bytes.Parser.Unsafe (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
+import Data.Primitive (ByteArray(ByteArray))
+import Data.Text.Short (ShortText)
+import Data.ByteString.Short.Internal (ShortByteString(SBS))
+import Data.Bytes.Types (Bytes(Bytes))
 
 import qualified Arithmetic.Nat as Nat
 import qualified Data.Fixed as Fixed
+import qualified Data.Bytes as Bytes
+import qualified Data.Bytes.Types as BT
 import qualified Data.Bytes.Builder as Builder
 import qualified Data.Bytes.Builder.Bounded as BB
+import qualified Data.Bytes.Builder.Bounded.Unsafe as BBU
+import qualified Data.Bytes.Chunks as Chunks
 import qualified Data.Bytes.Parser as Parser
 import qualified Data.Bytes.Parser.Latin as Latin
 import qualified Data.Bytes.Parser.Unsafe as Unsafe
+import qualified Data.Primitive as PM
+import qualified Data.Text.Short.Unsafe as TS
 import qualified GHC.Exts as Exts
 import qualified Prelude as Prelude
 
@@ -1081,21 +1094,102 @@ bindToScientific (Parser f) g = Parser
         runParser (g y) (# arr, b, c #) s1
   )
 
+-- | Encode a number as text. If the exponent is between -50 and +50 (exclusive),
+-- this represents the number without any exponent. For example:
+--
+-- >>> encode (small 87654321 (-3))
+-- "87654.321"
+-- >>> encode (small 5000 (-3))
+-- "-5000"
+--
+-- The decision of when to use an exponent is not considered stable part of
+-- this library\'s API. Check the test suite for examples of what to expect,
+-- and feel free to open an issue or contribute if the output of this function
+-- is unsightly in certain situations.
+encode :: Scientific -> ShortText
+encode s = case Chunks.concatU (Builder.run 128 (builderUtf8 s)) of
+  ByteArray x -> TS.fromShortByteStringUnsafe (SBS x)
+
+-- | Variant of 'encode' that provides a builder instead.
 builderUtf8 :: Scientific -> Builder
 builderUtf8 (Scientific coeff e big)
   | e == 0 = Builder.intDec coeff
   | e == minBound = let LargeScientific coeff' e' = big in
-      case e' of
-        0 -> Builder.integerDec coeff'
-        _ -> 
-          Builder.integerDec coeff'
-          <>
-          Builder.ascii 'e'
-          <>
-          Builder.integerDec e'
-  | otherwise = Builder.fromBounded Nat.constant $
-      BB.intDec coeff
-      `BB.append`
-      BB.ascii 'e'
-      `BB.append`
-      BB.intDec e
+      if | coeff' == 0 -> Builder.ascii '0'
+         | e' == 0 -> Builder.integerDec coeff'
+         | e' > 0 && e' < 50 ->
+             -- TODO: Add a replicate function to builder to improve this.
+             Builder.integerDec coeff' <> Builder.bytes (Bytes.replicate (fromInteger e') 0x30)
+         | e' < 0, e' > (-50), coeff' > 0, coeff' < 18446744073709551616 ->
+             let coeff'' = fromInteger coeff' :: Word
+                 e'' = fromInteger e' :: Int
+              in Builder.bytes (encodePosCoeffNegExp coeff'' e'')
+         | e' < 0, e' > (-50), coeff' < 0, coeff' > (-18446744073709551616) ->
+             let coeff'' = fromInteger (Prelude.negate coeff') :: Word
+                 e'' = fromInteger e' :: Int
+              in Builder.bytes (encodeNegCoeffNegExp coeff'' e'')
+         | otherwise ->
+             Builder.integerDec coeff'
+             <>
+             Builder.ascii 'e'
+             <>
+             Builder.integerDec e'
+  | otherwise =
+      if | coeff == 0 -> Builder.ascii '0'
+         | e > 0 && e < 50 ->
+             -- TODO: Add a replicate function to builder to improve this.
+             Builder.intDec coeff <> Builder.bytes (Bytes.replicate e 0x30)
+         | e < 0 && e > (-50) -> if coeff > 0
+             then Builder.bytes (encodePosCoeffNegExp (fromIntegral @Int @Word coeff) e)
+             else Builder.bytes (encodeNegCoeffNegExp (fromIntegral @Int @Word (Prelude.negate coeff)) e)
+         | otherwise -> Builder.fromBounded Nat.constant $
+             BB.intDec coeff
+             `BB.append`
+             BB.ascii 'e'
+             `BB.append`
+             BB.intDec e
+
+-- Precondition: exponent is negative.
+-- This is convoluted, so if a reader of this code thinks of a better
+-- way to do this, feel free to PR a more simple replacement. 
+encodePosCoeffNegExp :: Word -> Int -> Bytes
+encodePosCoeffNegExp !w !e = runST $ do
+  dst <- PM.newByteArray 128
+  PM.setByteArray dst 0 128 (0x30 :: Word8)
+  end <- BBU.pasteST (BB.wordDec w) dst 100
+  let dotIx = end + e
+  let coeffMag = end - 100
+  let extra = if coeffMag > Prelude.negate e
+        then (coeffMag - Prelude.negate e) - 1
+        else 0
+  PM.moveByteArray dst 0 dst 1 dotIx
+  PM.writeByteArray dst (dotIx - 1) (0x2E :: Word8)
+  dst' <- PM.unsafeFreezeByteArray dst
+  pure Bytes
+    { BT.array=dst'
+    , BT.offset=dotIx - 2 - extra
+    , BT.length=Prelude.negate e + 2 + extra
+    }
+
+-- Precondition: exponent is negative.
+-- This is convoluted, so if a reader of this code thinks of a better
+-- way to do this, feel free to PR a more simple replacement. 
+encodeNegCoeffNegExp :: Word -> Int -> Bytes
+encodeNegCoeffNegExp !w !e = runST $ do
+  dst <- PM.newByteArray 128
+  PM.setByteArray dst 0 128 (0x30 :: Word8)
+  end <- BBU.pasteST (BB.wordDec w) dst 100
+  let dotIx = end + e
+  let coeffMag = end - 100
+  let extra = if coeffMag > Prelude.negate e
+        then (coeffMag - Prelude.negate e) - 1
+        else 0
+  PM.moveByteArray dst 0 dst 1 dotIx
+  PM.writeByteArray dst (dotIx - 1) (0x2E :: Word8)
+  PM.writeByteArray dst (dotIx - 3 - extra) (0x2D :: Word8)
+  dst' <- PM.unsafeFreezeByteArray dst
+  pure Bytes
+    { BT.array=dst'
+    , BT.offset=dotIx - 3 - extra
+    , BT.length=Prelude.negate e + 3 + extra
+    }

@@ -4,6 +4,9 @@
 
 * Add `fromWord8`, `fromWord16`, and `fromWord32`.
 * Add `roundShiftedToInt64`.
+* Add `encode`.
+* Change `builderUtf8` to present numbers in decimal notation without exponent
+  in many common cases. This is not considered a breaking change.
 
 ## 0.1.3.0 -- 2021-02-23
 
