@@ -1,6 +1,6 @@
 # Revision history for scientific-notation
 
-## 0.1.4.0 -- 2021-??-??
+## 0.1.4.0 -- 2022-03-16
 
 * Add `fromWord8`, `fromWord16`, and `fromWord32`.
 * Add `roundShiftedToInt64`.
