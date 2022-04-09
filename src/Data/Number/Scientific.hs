@@ -52,8 +52,8 @@ import Prelude hiding (negate)
 
 import Control.Monad.ST (runST)
 import GHC.Exts (Int#,Word#,Int(I#),(+#))
-import GHC.Word (Word(W#),Word8(W8#),Word16(W16#),Word32(W32#),Word64(W64#))
-import GHC.Int (Int64(I64#),Int32(I32#))
+import GHC.Word.Compat
+import GHC.Int.Compat
 import Data.Bytes.Builder (Builder)
 import Data.Bytes.Parser.Unsafe (Parser(..))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
