@@ -1,5 +1,9 @@
 # Revision history for scientific-notation
 
+## 0.1.5.0 -- 2022-07-15
+
+* Support GHC 9.2.
+
 ## 0.1.4.0 -- 2022-03-16
 
 * Add `fromWord8`, `fromWord16`, and `fromWord32`.
