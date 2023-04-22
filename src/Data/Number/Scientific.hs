@@ -51,7 +51,7 @@ module Data.Number.Scientific
 import Prelude hiding (negate)
 
 import Control.Monad.ST (runST)
-import GHC.Exts (Int#,Word#,Int(I#),(+#))
+import GHC.Exts (Int#,Word#,Int(I#),(+#), intToInt64#, int64ToInt#)
 import GHC.Word.Compat
 import GHC.Int.Compat
 import Data.Bytes.Builder (Builder)
@@ -128,7 +128,7 @@ eqSmall cA0 eA0 cB0 eB0 =
 
 eqLargeScientific :: LargeScientific -> LargeScientific -> Bool
 eqLargeScientific a b =
-  let LargeScientific cA eA = largeNormalize a 
+  let LargeScientific cA eA = largeNormalize a
       LargeScientific cB eB = largeNormalize b
    in cA == cB && eA == eB
 
@@ -210,7 +210,7 @@ toInt64 :: Scientific -> Maybe Int64
 {-# inline toInt64 #-}
 toInt64 (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum of
   (# (# #) | #) -> Nothing
-  (# | i #) -> Just (I64# i)
+  (# | i #) -> Just (I64# (intToInt64# i))
 
 -- | This works even if the number has a fractional component. For example:
 --
@@ -227,7 +227,7 @@ roundShiftedToInt64 ::
 roundShiftedToInt64 (I# adj) (Scientific (I# coeff) (I# e) largeNum) =
   case roundToInt# coeff e adj largeNum of
      (# (# #) | #) -> Nothing
-     (# | i #) -> Just (I64# i)
+     (# | i #) -> Just (I64# (intToInt64# i))
 
 -- | Convert a 64-bit unsigned word to a 'Scientific'.
 fromWord64 :: Word64 -> Scientific
@@ -258,25 +258,25 @@ greaterThanInt64 :: Scientific -> Int64 -> Bool
 greaterThanInt64 (Scientific coeff0@(I# coeff0# ) e0 large0) tgt@(I64# tgt# )
   | e0 == minBound = largeGreaterThanInt64 large0 tgt
   | coeff0 == 0 = 0 > tgt
-  | e0 == 0 = I64# coeff0# > tgt
+  | e0 == 0 = I64# (intToInt64# coeff0#) > tgt
   | coeff0 > 0 =
       if | tgt <= 0 -> True
          | e0 > 0 -> case smallToInt coeff0 e0 of
              (# (# #) | #) -> True
-             (# | i# #) -> I64# i# > tgt
+             (# | i# #) -> I64# (intToInt64# i#) > tgt
            -- In last case, e0 is less than zero.
-         | otherwise -> case posIntExp10 (I# tgt#) (Prelude.negate e0) of
+         | otherwise -> case posIntExp10 (I# (int64ToInt# tgt#)) (Prelude.negate e0) of
              (# (# #) | #) -> False
-             (# | i# #) -> I64# coeff0# > I64# i#
+             (# | i# #) -> I64# (intToInt64# coeff0#) > I64# (intToInt64# i#)
   | otherwise = -- Coefficent is negative
       if | tgt >= 0 -> False
          | e0 > 0 -> case smallToInt coeff0 e0 of
              (# (# #) | #) -> False
-             (# | i# #) -> I64# i# > tgt
+             (# | i# #) -> I64# (intToInt64# i#) > tgt
            -- In last case, e0 is less than zero.
-         | otherwise -> case negIntExp10 (I# tgt#) (Prelude.negate e0) of
+         | otherwise -> case negIntExp10 (I# (int64ToInt# tgt#)) (Prelude.negate e0) of
              (# (# #) | #) -> True
-             (# | i# #) -> I64# coeff0# > I64# i#
+             (# | i# #) -> I64# (intToInt64# coeff0#) > I64# (intToInt64# i#)
 
 largeGreaterThanInt64 :: LargeScientific -> Int64 -> Bool
 largeGreaterThanInt64 large0@(LargeScientific coeff e) !tgt
@@ -286,7 +286,7 @@ largeGreaterThanInt64 large0@(LargeScientific coeff e) !tgt
       if | tgt <= 0 -> True
          | e > 0 -> case largeToInt large0 of
              (# (# #) | #) -> True
-             (# | i# #) -> I64# i# > tgt
+             (# | i# #) -> I64# (intToInt64# i#) > tgt
          | otherwise -> case posSciLowerBound False coeff e of
              Exactly n -> n > fromIntegral @Int64 @Integer tgt
              LowerBoundedMagnitude n -> (n+1) > fromIntegral @Int64 @Integer tgt
@@ -294,11 +294,11 @@ largeGreaterThanInt64 large0@(LargeScientific coeff e) !tgt
       if | tgt >= 0 -> False
          | e > 0 -> case largeToInt large0 of
              (# (# #) | #) -> False
-             (# | i# #) -> I64# i# > tgt
+             (# | i# #) -> I64# (intToInt64# i#) > tgt
          | otherwise -> case posSciLowerBound False coeff e of
              Exactly n -> n > fromIntegral @Int64 @Integer tgt
              LowerBoundedMagnitude n -> n > fromIntegral @Int64 @Integer tgt
-             
+
 -- | Expose the non-normalized exponent and coefficient.
 withExposed ::
      (Int -> Int -> a)
@@ -347,7 +347,7 @@ toSmallIntHelper fromSmall fromLarge coefficient0# exponent0# large0 =
 
 toWord8# :: Int# -> Int# -> LargeScientific -> (# (# #) | Word# #)
 {-# noinline toWord8# #-}
-toWord8# coefficient0# exponent0# large0 = 
+toWord8# coefficient0# exponent0# large0 =
   toSmallHelper smallToWord8 largeToWord8
     coefficient0# exponent0# large0
 
@@ -871,7 +871,7 @@ parserNegatedTrailingUtf8Bytes ::
   -> Parser e s Scientific
 parserNegatedTrailingUtf8Bytes e (I# leader) =
   boxScientific (parserNegatedTrailingUtf8Bytes# e leader)
--- 
+--
 -- parserTrailingUtf8Bytes# ::
 --      e -- Error message
 --   -> Parser e s Scientific#
@@ -1151,7 +1151,7 @@ builderUtf8 (Scientific coeff e big)
 
 -- Precondition: exponent is negative.
 -- This is convoluted, so if a reader of this code thinks of a better
--- way to do this, feel free to PR a more simple replacement. 
+-- way to do this, feel free to PR a more simple replacement.
 encodePosCoeffNegExp :: Word -> Int -> Bytes
 encodePosCoeffNegExp !w !e = runST $ do
   dst <- PM.newByteArray 128
@@ -1173,7 +1173,7 @@ encodePosCoeffNegExp !w !e = runST $ do
 
 -- Precondition: exponent is negative.
 -- This is convoluted, so if a reader of this code thinks of a better
--- way to do this, feel free to PR a more simple replacement. 
+-- way to do this, feel free to PR a more simple replacement.
 encodeNegCoeffNegExp :: Word -> Int -> Bytes
 encodeNegCoeffNegExp !w !e = runST $ do
   dst <- PM.newByteArray 128
