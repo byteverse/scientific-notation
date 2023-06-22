@@ -51,21 +51,19 @@ module Data.Number.Scientific
 import Prelude hiding (negate)
 
 import Control.Monad.ST (runST)
-import GHC.Exts (Int#,Word#,Int(I#),(+#), intToInt64#, int64ToInt#)
-import GHC.Word.Compat
-import GHC.Int.Compat
+import Data.ByteString.Short.Internal (ShortByteString(SBS))
 import Data.Bytes.Builder (Builder)
 import Data.Bytes.Parser.Unsafe (Parser(..))
+import Data.Bytes.Types (Bytes(Bytes))
 import Data.Fixed (Fixed(MkFixed),HasResolution)
 import Data.Primitive (ByteArray(ByteArray))
 import Data.Text.Short (ShortText)
-import Data.ByteString.Short.Internal (ShortByteString(SBS))
-import Data.Bytes.Types (Bytes(Bytes))
+import GHC.Exts (Int#,Word#,(+#),intToInt64#,int64ToInt#)
+import GHC.Int.Compat
+import GHC.Word.Compat
 
 import qualified Arithmetic.Nat as Nat
-import qualified Data.Fixed as Fixed
 import qualified Data.Bytes as Bytes
-import qualified Data.Bytes.Types as BT
 import qualified Data.Bytes.Builder as Builder
 import qualified Data.Bytes.Builder.Bounded as BB
 import qualified Data.Bytes.Builder.Bounded.Unsafe as BBU
@@ -73,6 +71,8 @@ import qualified Data.Bytes.Chunks as Chunks
 import qualified Data.Bytes.Parser as Parser
 import qualified Data.Bytes.Parser.Latin as Latin
 import qualified Data.Bytes.Parser.Unsafe as Unsafe
+import qualified Data.Bytes.Types as BT
+import qualified Data.Fixed as Fixed
 import qualified Data.Primitive as PM
 import qualified Data.Text.Short.Unsafe as TS
 import qualified GHC.Exts as Exts

@@ -1,6 +1,6 @@
 cabal-version: 2.2
 name: scientific-notation
-version: 0.1.5.0
+version: 0.1.6.0
 synopsis: Scientific notation intended for tokenization
 description:
   This library provides a type used to represent a number in
@@ -48,7 +48,7 @@ extra-source-files: CHANGELOG.md
 library
   exposed-modules: Data.Number.Scientific
   build-depends:
-    , base >=4.12 && <5
+    , base >=4.17.1 && <5
     , bytebuild >=0.3.5 && <0.4
     , bytesmith >=0.3 && <0.4
     , byteslice >=0.2.6 && <0.3

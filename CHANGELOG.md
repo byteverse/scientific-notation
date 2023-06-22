@@ -1,5 +1,9 @@
 # Revision history for scientific-notation
 
+## 0.1.6.0 -- 2023-??-??O
+
+* Support GHC 9.4 and 9.6. Drop support for GHCs older than 9.4.
+
 ## 0.1.5.0 -- 2022-07-15
 
 * Support GHC 9.2.
