@@ -3,6 +3,7 @@
 ## 0.1.6.0 -- 2023-??-??O
 
 * Support GHC 9.4 and 9.6. Drop support for GHCs older than 9.4.
+* Add `fromInt` and `fromInt(8|16|32|64)`.
 
 ## 0.1.5.0 -- 2022-07-15
 

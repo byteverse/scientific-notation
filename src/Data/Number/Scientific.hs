@@ -18,6 +18,11 @@ module Data.Number.Scientific
   , fromWord16
   , fromWord32
   , fromWord64
+  , fromInt
+  , fromInt8
+  , fromInt16
+  , fromInt32
+  , fromInt64
     -- * Consume
   , toWord
   , toWord8
@@ -236,6 +241,26 @@ fromWord64 !w = if w <= 9223372036854775807
   else
     let !b = LargeScientific (fromIntegral w) 0
      in Scientific 0 minBound b
+
+fromInt :: Int -> Scientific
+{-# inline fromInt #-}
+fromInt coeff = Scientific coeff 0 zeroLarge
+
+fromInt8 :: Int8 -> Scientific
+{-# inline fromInt8 #-}
+fromInt8 coeff = Scientific (fromIntegral coeff) 0 zeroLarge
+
+fromInt16 :: Int16 -> Scientific
+{-# inline fromInt16 #-}
+fromInt16 coeff = Scientific (fromIntegral coeff) 0 zeroLarge
+
+fromInt32 :: Int32 -> Scientific
+{-# inline fromInt32 #-}
+fromInt32 coeff = Scientific (fromIntegral coeff) 0 zeroLarge
+
+fromInt64 :: Int64 -> Scientific
+{-# inline fromInt64 #-}
+fromInt64 coeff = Scientific (fromIntegral coeff) 0 zeroLarge
 
 -- | Convert an 8-bit unsigned word to a 'Scientific'.
 fromWord8 :: Word8 -> Scientific
