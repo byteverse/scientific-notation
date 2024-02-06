@@ -1,6 +1,10 @@
 # Revision history for scientific-notation
 
-## 0.1.6.0 -- 2023-??-??O
+## 0.1.6.1 -- 2024-02-06
+
+* Update package metadata.
+
+## 0.1.6.0 -- 2023-06-27
 
 * Support GHC 9.4 and 9.6. Drop support for GHCs older than 9.4.
 * Add `fromInt` and `fromInt(8|16|32|64)`.
@@ -38,4 +42,4 @@
 
 ## 0.1.0.0 -- 2019-09-24
 
-* First version. Released on an unsuspecting world.
+* First version.
