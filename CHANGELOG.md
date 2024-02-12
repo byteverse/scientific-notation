@@ -1,5 +1,9 @@
 # Revision history for scientific-notation
 
+## 0.1.7.0 -- 2024-02-12
+
+* Add `toInteger`.
+
 ## 0.1.6.1 -- 2024-02-06
 
 * Update package metadata.
