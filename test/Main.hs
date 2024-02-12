@@ -4,13 +4,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
+import Prelude hiding (toInteger)
+
 import Control.Monad (replicateM, when)
 import Data.Bool (bool)
 import Data.Bytes.Types (Bytes (Bytes))
 import Data.Char (ord)
 import Data.Fixed (E12, Fixed)
 import Data.Int (Int64)
-import Data.Number.Scientific (large, roundShiftedToInt64, small, toInt32, toInt64, toWord16, toWord32, toWord64, toWord8)
+import Data.Number.Scientific (large, roundShiftedToInt64, small, toInt32, toInt64, toWord16, toWord32, toWord64, toWord8, toInteger)
 import Data.Primitive (ByteArray)
 import Data.Word (Word8)
 import Test.Tasty (TestTree, defaultMain, testGroup)
@@ -146,6 +148,14 @@ tests =
         , THU.testCase "AD" $ Just 0 @=? roundShiftedToInt64 0 (large (50000000000000000000000000000) (-1_000_000_000))
         , THU.testCase "AE" $ Just 2 @=? toInt64 (small 2 0)
         , THU.testCase "AF" $ Just 2 @=? toInt64 (large 2 0)
+        ]
+    , testGroup
+        "Integer"
+        [ THU.testCase "A" $ Just 30 @=? toInteger (small 300 (-1))
+        , THU.testCase "B" $ Just 300 @=? toInteger (small 300 0)
+        , THU.testCase "C" $ Just 65535 @=? toInteger (large 65535e40 (-40))
+        , THU.testCase "D" $ Just 999_999_999_999_999_999_999_999_999_999_999_000 @=? toInteger (large 999_999_999_999_999_999_999_999_999_999_999 3)
+        , THU.testCase "E" $ Just 999_999_999_999_999_999_999_999_999_999_999 @=? toInteger (large 999_999_999_999_999_999_999_999_999_999_999_000 (-3))
         ]
     , testGroup
         "Compare"

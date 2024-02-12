@@ -34,6 +34,7 @@ module Data.Number.Scientific
   , toInt
   , toInt32
   , toInt64
+  , toInteger
   , withExposed
 
     -- * Scale and Consume
@@ -59,7 +60,7 @@ module Data.Number.Scientific
   , builderUtf8
   ) where
 
-import Prelude hiding (negate)
+import Prelude hiding (negate,toInteger)
 
 import Control.Monad.ST (runST)
 import Data.ByteString.Short.Internal (ShortByteString (SBS))
@@ -236,6 +237,53 @@ toInt64 :: Scientific -> Maybe Int64
 toInt64 (Scientific (I# coeff) (I# e) largeNum) = case toInt# coeff e largeNum of
   (# (# #) | #) -> Nothing
   (# | i #) -> Just (I64# (intToInt64# i))
+
+-- | This can exhaust memory. Do not use on untrusted input.
+toInteger :: Scientific -> Maybe Integer
+toInteger (Scientific coeff e largeNum)
+  | e == minBound = case largeNum of
+      LargeScientific bigCoeff bigExp -> case compare bigExp 0 of
+        GT -> Just (bigCoeff * ((10 :: Integer) ^ bigExp))
+        EQ -> Just bigCoeff
+        LT -> case attemptLargeNegativeExponentiate bigCoeff (Prelude.negate bigExp) of
+          Nothing -> Nothing
+          Just i -> Just i
+  | otherwise = case compare e 0 of
+      GT -> Just (Prelude.toInteger coeff * ((10 :: Integer) ^ e))
+      EQ -> Just (Prelude.toInteger coeff)
+      LT -> case attemptNegativeExponentiate coeff (Prelude.negate e) of
+        Nothing -> Nothing
+        Just i -> Just (Prelude.toInteger i)
+
+-- The exponent argument must be non-negative, but we interpret it as
+-- a negative number.
+attemptNegativeExponentiate :: Int -> Int -> Maybe Int
+attemptNegativeExponentiate c0 e0 = go c0 e0 where
+  -- Note: This is unoptimized and has poor performance.
+  go :: Int -> Int -> Maybe Int
+  go !c !e = case compare e 0 of
+    EQ -> Just c
+    GT ->
+      let c' = div c 10
+       in if c' * 10 == c
+            then go c' (e - 1)
+            else Nothing
+    LT -> errorWithoutStackTrace "attemptNegativeExponentiate: invariant violated"
+
+-- The exponent argument must be non-negative, but we interpret it as
+-- a negative number.
+attemptLargeNegativeExponentiate :: Integer -> Integer -> Maybe Integer
+attemptLargeNegativeExponentiate c0 e0 = go c0 e0 where
+  -- Note: This is unoptimized and has poor performance.
+  go :: Integer -> Integer -> Maybe Integer
+  go !c !e = case compare e 0 of
+    EQ -> Just c
+    GT ->
+      let c' = div c 10
+       in if c' * 10 == c
+            then go c' (e - 1)
+            else Nothing
+    LT -> errorWithoutStackTrace "attemptLargeNegativeExponentiate: invariant violated"
 
 {- | This works even if the number has a fractional component. For example:
 
@@ -699,7 +747,7 @@ roundLargeToInt !adj (LargeScientific coefficient0 exponent0)
                 else roundNegIntegerNegExp10 coefficient (fromInteger expon)
   | otherwise = (# (# #) | #)
  where
-  exponent1 = exponent0 + toInteger adj
+  exponent1 = exponent0 + Prelude.toInteger adj
 
 -- Precondition: the exponent is non-negative. This returns
 -- an unboxed Nothing on overflow. This implementation should

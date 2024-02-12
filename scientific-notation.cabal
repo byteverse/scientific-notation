@@ -1,6 +1,6 @@
 cabal-version:   2.4
 name:            scientific-notation
-version:         0.1.6.1
+version:         0.1.7.0
 synopsis:        Scientific notation intended for tokenization
 description:
   This library provides a type used to represent a number in
